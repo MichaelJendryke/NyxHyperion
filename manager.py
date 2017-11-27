@@ -10,24 +10,24 @@ from io import StringIO,BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-class sql:
-	database = ''
-	user = ''
-	password = ''
-	host = ''
-	port = '' 
-	def config(self):
-		config = configparser.ConfigParser()
-		config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
-		config.read(config_file)
-		self.database = config['DEFAULT']['database']
-		self.user = config['DEFAULT']['user']
-		self.password = config['DEFAULT']['password']
-		self.host = config['DEFAULT']['host']
-		self.port = config['DEFAULT']['port']
+config = configparser.ConfigParser()
+config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
+config.read(config_file)
+cfg_database = config['PostgreSQL']['database']
+cfg_user = config['PostgreSQL']['user']
+cfg_password = config['PostgreSQL']['password']
+cfg_host = config['PostgreSQL']['host']
+cfg_port = config['PostgreSQL']['port']
+cfg_path = config['Server']['path']
 
+class sql:
 	def connect(self):
-		connection = psycopg2.connect(database=self.database, user = self.user, password = self.password, host = self.host, port = self.port)
+		try:
+			connection = psycopg2.connect(database=cfg_database, user = cfg_user, password = cfg_password, host = cfg_host, port = cfg_port)
+		except psycopg2.OperationalError as e:
+			print('ERROR: Cannot connect to database')
+			print('{message}'.format(message=str(e)))
+			exit()
 		cursor = connection.cursor()
 		return connection,cursor
 
@@ -45,7 +45,10 @@ class sql:
 
 	def insert(self,s,d):
 		conn, cur = self.connect()
-		cur.execute(s,d)
+		try:
+			cur.execute(s,d)
+		except:
+			print(e)
 		conn.commit()
 		self.disconnect(conn, cur)
 
@@ -245,6 +248,39 @@ class manifest():
 			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
 			s.insert(SQL,data) #NEEDS to be wrapped in a try statement
 
+	def delete(self,o):
+		s = sql()
+		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
+		data = (o,)
+		rows = s.select(SQL,data)
+		for row in rows:
+			orderNumber = row[0]
+			notice = row[1]
+			status = row[2]
+			directory = row[3]
+			folder = os.path.join(directory,str(orderNumber))
+			print('Order', orderNumber,'(',notice, ') has the status', status)
+			question = 'Are you sure you want to delete this order at {d} ?'.format(d=folder)
+			decision = query_yes_no(question,  default="yes")
+			if decision == 'yes' and os.path.exists(folder):
+				self.deletefiles(folder)
+				self.deletefolder(folder)
+				s.setOrderStatus(row[0],'DELETED')
+			else:
+				print('Nothing to delete.')
+
+		exit()
+
+	def deletefiles(self,dir):
+		filelist = [ f for f in os.listdir(dir) ]
+		for f in filelist:
+			os.remove(os.path.join(dir, f))
+
+	def deletefolder(self,dir):
+		os.rmdir(dir)
+
+
+
 class image:
 	def download(self):
 		s = sql()
@@ -295,18 +331,51 @@ class checkInput:
 			return l
 
 	def path(p):
-		if not os.path.isdir(p):
-			print('Provide a valid directory like "-p D:\\TEMP\\noaa"')
-			exit()
+		if p == '':
+			print('Provide a directory like "-p D:\\TEMP\\noaa"')
+			print('Taking default storage location',cfg_path)
 		else:
 			return p
+
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+    
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is one of "yes" or "no".
+    """
+    # from http://code.activestate.com/recipes/577058-query-yesno/
+    valid = {"yes":"yes",   "y":"yes",  "ye":"yes",
+             "no":"no",     "n":"no"}
+    if default == None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while 1:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return default
+        elif choice in valid.keys():
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "\
+                             "(or 'y' or 'n').\n")
 
 
 def create_arg_parser():
 	""""Creates and returns the ArgumentParser object."""
 	#https://stackoverflow.com/questions/14360389/getting-file-path-from-command-line-argument-in-python
 	parser = argparse.ArgumentParser(description='This program manages orders form NOAA CLASS')
-	parser.add_argument('-m','--mode',default="list", choices = ['list','addNewOrder','getManifest','processManifest','downloadImages'],
+	parser.add_argument('-m','--mode',default="list", choices = ['list','addNewOrder','getManifest','processManifest','downloadImages','deleteOrder'],
 					help='What do you want to do?')
 	parser.add_argument('-o', '--orderNumber',default="",
 					help='The Order Number from NOAA CLASS')
@@ -320,25 +389,23 @@ def create_arg_parser():
 
 
 def main(argv):
-	arg_parser = create_arg_parser()
-	parsed_args = arg_parser.parse_args(sys.argv[1:])
-
-	mode = parsed_args.mode
-
 	s = sql()
 	m = manifest()
 	i = image()
 
+	arg_parser = create_arg_parser()
+	parsed_args = arg_parser.parse_args(sys.argv[1:])
+	mode = parsed_args.mode
+
 	if mode == 'list':
-		print('Print current table')
 		s = sql()
-		s.config()
 		s.printprogresstable(s.selectprogresstable())
 	elif mode == 'addNewOrder':
 		#Check other argument
 		print('Add new order')
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
 		location = checkInput.location(parsed_args.location)
+		path = checkInput.path(parsed_args.path)
 		addnewordernumber(orderNumber,location)
 	elif mode == 'getManifest':
 		#Check other argument
@@ -362,6 +429,9 @@ def main(argv):
 		m.process()
 	elif mode == 'downloadImages':
 		i.download()
+	elif mode == 'deleteOrder':
+		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
+		m.delete(orderNumber)
 
 	exit()
 
