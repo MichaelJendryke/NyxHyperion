@@ -2,21 +2,13 @@
 # FROM http://www.tutorialspoint.com/python/python_command_line_arguments.htm
 
 import configparser
-
 import argparse
-
 import sys, os, getopt
-
 import psycopg2
-
 import pycurl
 from io import StringIO,BytesIO
-
 import xml.etree.ElementTree as ET
-
 from datetime import datetime
-
-
 
 class sql:
 	database = ''
