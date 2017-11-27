@@ -47,8 +47,10 @@ class sql:
 		conn, cur = self.connect()
 		try:
 			cur.execute(s,d)
-		except:
-			print(e)
+		except psycopg2.OperationalError as e:
+			print('ERROR: Cannot INSERT into table')
+			print('{message}'.format(message=str(e)))
+			exit()
 		conn.commit()
 		self.disconnect(conn, cur)
 
@@ -156,7 +158,6 @@ class ftp:
 		    code = c.getinfo(pycurl.HTTP_CODE)
 		    c.close()
 		    return code
-		    
 
 
 class manifest():
@@ -202,6 +203,28 @@ class manifest():
 		else:
 			print('There is no Manifest for order %s',o)
 
+	def loadxml(self,xmlfile,orderNumber):
+		print('INFO: Loading XML Manifest file', str(xmlfile),'into table images')
+		tree = ET.parse(xmlfile)
+		root = tree.getroot()
+		s = sql()
+		for lineitem in root.findall('./line_item/item'):
+			file_name = lineitem.find('file_name').text
+			file_size = lineitem.find('file_size').text
+			creation_date = lineitem.find('creation_date').text
+			creation_date = datetime.strptime(creation_date, "%Y-%m-%dT%H:%M:%SZ")
+			expiration_date = lineitem.find('expiration_date').text
+			expiration_date =  datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
+			try:
+				checksum = lineitem.find('checksum').text
+			except:
+				print('ERROR: Manifest at',str(xmlfile),'does not include checksum')
+				checksum = None
+			print('INFO: Loading data to database table images:',file_name, file_size, creation_date, expiration_date, checksum)
+			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s);" # Note: no quotes
+			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
+			s.insert(SQL,data) #NEEDS to be wrapped in a try statement
+
 	def process(self):
 		s = sql()
 		SQL = ("SELECT ordernumber, path,manifest FROM orders WHERE status = 'MANIFEST'")
@@ -226,51 +249,8 @@ class manifest():
 					s.setOrderStatus(str(orderNumber),'READY')
 		exit()
 
-	def loadxml(self,xmlfile,orderNumber):
-		print('INFO: Loading XML Manifest file', str(xmlfile),'into table images')
-		tree = ET.parse(xmlfile)
-		root = tree.getroot()
-		s = sql()
-		for lineitem in root.findall('./line_item/item'):
-			file_name = lineitem.find('file_name').text
-			file_size = lineitem.find('file_size').text
-			creation_date = lineitem.find('creation_date').text
-			creation_date = datetime.strptime(creation_date, "%Y-%m-%dT%H:%M:%SZ")
-			expiration_date = lineitem.find('expiration_date').text
-			expiration_date =  datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
-			try:
-				checksum = lineitem.find('checksum').text
-			except:
-				print('ERROR: Manifest at',str(xmlfile),'does not include checksum')
-				checksum = None
-			print('INFO: Loading data to database table images:',file_name, file_size, creation_date, expiration_date, checksum)
-			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s);" # Note: no quotes
-			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
-			s.insert(SQL,data) #NEEDS to be wrapped in a try statement
 
-	def delete(self,o):
-		s = sql()
-		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
-		data = (o,)
-		rows = s.select(SQL,data)
-		for row in rows:
-			orderNumber = row[0]
-			notice = row[1]
-			status = row[2]
-			directory = row[3]
-			folder = os.path.join(directory,str(orderNumber))
-			print('Order', orderNumber,'(',notice, ') has the status', status)
-			question = 'Are you sure you want to delete this order at {d} ?'.format(d=folder)
-			decision = query_yes_no(question,  default="yes")
-			if decision == 'yes' and os.path.exists(folder):
-				self.deletefiles(folder)
-				self.deletefolder(folder)
-				s.setOrderStatus(row[0],'DELETED')
-			else:
-				print('Nothing to delete.')
-
-		exit()
-
+class utils:
 	def deletefiles(self,dir):
 		filelist = [ f for f in os.listdir(dir) ]
 		for f in filelist:
@@ -279,7 +259,37 @@ class manifest():
 	def deletefolder(self,dir):
 		os.rmdir(dir)
 
+	def query_yes_no(self,question, default='yes'):
+	    """Ask a yes/no question via raw_input() and return their answer.
+	    
+	    "question" is a string that is presented to the user.
+	    "default" is the presumed answer if the user just hits <Enter>.
+	        It must be "yes" (the default), "no" or None (meaning
+	        an answer is required of the user).
 
+	    The "answer" return value is one of "yes" or "no".
+	    """
+	    # from http://code.activestate.com/recipes/577058-query-yesno/
+	    valid = {'yes':'yes',   'y':'yes',  'ye':'yes',
+	             'no':'no',     'n':'no'}
+	    if default == None:
+	        prompt = ' [y/n] '
+	    elif default == 'yes':
+	        prompt = ' [Y/n] '
+	    elif default == 'no':
+	        prompt = ' [y/N] '
+	    else:
+	        raise ValueError('invalid default answer: {d}'.format(d=default))
+
+	    while 1:
+	        sys.stdout.write(question + prompt)
+	        choice = input().lower()
+	        if default is not None and choice == '':
+	            return default
+	        elif choice in valid.keys():
+	            return valid[choice]
+	        else:
+	            sys.stdout.write('Please respond with \'yes\' or \'no\' (or \'y\' or \'n\').')
 
 class image:
 	def download(self):
@@ -302,12 +312,34 @@ class image:
 				print(res)
 		return 'done'
 
+class order:
+	def add(self, orderNumber, server, directory):
+		SQL = "INSERT INTO orders (ordernumber, status, server,directory) VALUES (%s,%s,%s,%s);" # Note: no quotes
+		data = (orderNumber, "NEW", server, directory)
+		s = sql()
+		s.insert(SQL,data)
 
-def addnewordernumber(number,loc):
-	SQL = "INSERT INTO orders (ordernumber, status,location) VALUES (%s,%s,%s);" # Note: no quotes
-	data = (number,"NEW",loc)
-	s = sql()
-	s.insert(SQL,data)
+	def remove(self,o):
+		s = sql()
+		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
+		data = (o,)
+		rows = s.select(SQL,data)
+		for row in rows:
+			orderNumber = row[0]
+			notice = row[1]
+			status = row[2]
+			directory = row[3]
+			folder = os.path.join(directory,str(orderNumber))
+			print('Order', orderNumber,'(',notice, ') has the status', status)
+			question = 'Are you sure you want to delete this order at {d} ?'.format(d=folder)
+			decision = query_yes_no(question,  default="yes")
+			if decision == 'yes' and os.path.exists(folder):
+				self.deletefiles(folder)
+				self.deletefolder(folder)
+				s.setOrderStatus(row[0],'DELETED')
+			else:
+				print('Nothing to delete.')
+		exit()
 
 class checkInput:
 	def orderNumber(o):
@@ -323,7 +355,7 @@ class checkInput:
 			print('Provide a valid ORDERNUMBER like "-o 12344256"')
 			exit()
 
-	def location(l):
+	def server(l):
 		if l == '':
 			print('Provide a valid LOCATION as per choices in "-l"')
 			exit()
@@ -331,57 +363,29 @@ class checkInput:
 			return l
 
 	def path(p):
+		utils_c = utils()
 		if p == '':
-			print('Provide a directory like "-p D:\\TEMP\\noaa"')
-			print('Taking default storage location',cfg_path)
+			question = 'You have not provided a path with -p \nShould the data be stored at the default path {p}'.format(p=cfg_path)
+			answer = utils_c.query_yes_no(question, default='yes')
+			if answer == 'yes':
+				return cfg_path
+			else:
+				print('Provide a directory like "-p D:\\TEMP\\noaa"')
+				exit()
 		else:
 			return p
-
-def query_yes_no(question, default="yes"):
-    """Ask a yes/no question via raw_input() and return their answer.
-    
-    "question" is a string that is presented to the user.
-    "default" is the presumed answer if the user just hits <Enter>.
-        It must be "yes" (the default), "no" or None (meaning
-        an answer is required of the user).
-
-    The "answer" return value is one of "yes" or "no".
-    """
-    # from http://code.activestate.com/recipes/577058-query-yesno/
-    valid = {"yes":"yes",   "y":"yes",  "ye":"yes",
-             "no":"no",     "n":"no"}
-    if default == None:
-        prompt = " [y/n] "
-    elif default == "yes":
-        prompt = " [Y/n] "
-    elif default == "no":
-        prompt = " [y/N] "
-    else:
-        raise ValueError("invalid default answer: '%s'" % default)
-
-    while 1:
-        sys.stdout.write(question + prompt)
-        choice = input().lower()
-        if default is not None and choice == '':
-            return default
-        elif choice in valid.keys():
-            return valid[choice]
-        else:
-            sys.stdout.write("Please respond with 'yes' or 'no' "\
-                             "(or 'y' or 'n').\n")
-
 
 def create_arg_parser():
 	""""Creates and returns the ArgumentParser object."""
 	#https://stackoverflow.com/questions/14360389/getting-file-path-from-command-line-argument-in-python
 	parser = argparse.ArgumentParser(description='This program manages orders form NOAA CLASS')
-	parser.add_argument('-m','--mode',default="list", choices = ['list','addNewOrder','getManifest','processManifest','downloadImages','deleteOrder'],
+	parser.add_argument('-m','--mode',default="list", choices = ['list','addOrder','getManifest','processManifest','downloadImages','deleteOrder'],
 					help='What do you want to do?')
 	parser.add_argument('-o', '--orderNumber',default="",
 					help='The Order Number from NOAA CLASS')
 	parser.add_argument('-s', '--status',default="",
 					help='The Status of the order')	
-	parser.add_argument('-l', '--location',default="", choices = ['ncdc','ngdc'],
+	parser.add_argument('-l', '--server',default="", choices = ['ncdc','ngdc'],
 					help='The location of the order')	
 	parser.add_argument('-p',  '--path',default="",
 					help='Path to the output directory')
@@ -389,52 +393,49 @@ def create_arg_parser():
 
 
 def main(argv):
-	s = sql()
-	m = manifest()
-	i = image()
+	sql_c = sql()
+	manifest_c = manifest()
+	image_c = image()
+	order_c = order()
 
 	arg_parser = create_arg_parser()
 	parsed_args = arg_parser.parse_args(sys.argv[1:])
 	mode = parsed_args.mode
 
 	if mode == 'list':
-		s = sql()
-		s.printprogresstable(s.selectprogresstable())
-	elif mode == 'addNewOrder':
-		#Check other argument
-		print('Add new order')
+		print('Current progress table')
+		sql_c.printprogresstable(sql_c.selectprogresstable())
+	elif mode == 'addOrder':
+		print('Add a new order')
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-		location = checkInput.location(parsed_args.location)
-		path = checkInput.path(parsed_args.path)
-		addnewordernumber(orderNumber,location)
+		server = checkInput.server(parsed_args.server)
+		directory = checkInput.path(parsed_args.path)
+		order_c.add(orderNumber, server, directory)
 	elif mode == 'getManifest':
 		#Check other argument
 		path = checkInput.path(parsed_args.path)
 		#NEED from database
-		SQL = "SELECT location, ordernumber FROM orders WHERE status='NEW'"
+		SQL = "SELECT location, ordernumber, directory FROM orders WHERE status='NEW'"
 		data = ('',)
 		rows = s.select(SQL,data)
 		for row in rows:
 			location = str(row[0])
 			orderNumber = str(row[1])
-			SQL = "UPDATE orders set path = %s where ordernumber = %s"
-			data = (path,orderNumber)
-			s.update(SQL,data)			
+			path = str(row[2])
 			url = (r'ftp://ftp.class.%s.noaa.gov/%s/' % (location,orderNumber))
 			destination = os.path.join(path,orderNumber)
 			if not os.path.isdir(destination):
 				os.mkdir(os.path.expanduser(destination))
-			m.download(url,destination,orderNumber)
+			manifest_c.download(url,destination,orderNumber)
 	elif mode == 'processManifest':
-		m.process()
+		manifest_c.process()
 	elif mode == 'downloadImages':
 		i.download()
 	elif mode == 'deleteOrder':
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-		m.delete(orderNumber)
+		order_c.delete(orderNumber)
 
 	exit()
-
 
 if __name__ == "__main__":
 	main(sys.argv[1:])
