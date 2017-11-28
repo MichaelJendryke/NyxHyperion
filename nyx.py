@@ -221,7 +221,7 @@ class manifest():
 			path = row[1]
 			manifest = row[2]
 			if os.path.exists(os.path.join(path, str(orderNumber), manifest)):
-				if self.loadxml(os.path.join(path,str(orderNumber),manifest),orderNumber):
+				if self.loadxml(os.path.join(path,str(orderNumber),manifest),orderNumber) == 1:
 					sql_c.setOrderStatus(str(orderNumber),'READY')
 				else:
 					sql_c.setOrderStatus(str(orderNumber),'ERROR')
@@ -233,19 +233,19 @@ class manifest():
 		root = tree.getroot()
 		sql_c = sql()
 		comment = root.find('comment').text
-		total_files = root.find('total_files')
+		total_files = int(root.find('total_files').text)
 		print(comment, total_files)
 		counter = 1
-		for lineitem in root.findall('./line_item/item'):
+		for lineitem in root.findall('./line_item'):
 			noaaid = lineitem.get('id')
-			file_name = lineitem.find('file_name').text
-			file_size = lineitem.find('file_size').text
-			creation_date = lineitem.find('creation_date').text
+			file_name = lineitem.find('item/file_name').text
+			file_size = lineitem.find('item/file_size').text
+			creation_date = lineitem.find('item/creation_date').text
 			creation_date = datetime.strptime(creation_date, "%Y-%m-%dT%H:%M:%SZ")
-			expiration_date = lineitem.find('expiration_date').text
+			expiration_date = lineitem.find('item/expiration_date').text
 			expiration_date =  datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
 			try:
-				checksum = lineitem.find('checksum').text
+				checksum = lineitem.find('item/checksum').text
 			except:
 				print('ERROR: Manifest at',str(xmlfile),'does not include checksum')
 				checksum = None
@@ -255,9 +255,9 @@ class manifest():
 			#sql_c.insert(SQL,data) #NEEDS to be wrapped in a try statement
 			counter += 1
 		if total_files == counter:
-			return true
+			return 1
 		else:
-			return false
+			return 0
 
 class utils:
 	def deletefiles(self,dir):
