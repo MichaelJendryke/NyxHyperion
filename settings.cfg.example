@@ -1,13 +1,9 @@
-[DEFAULT]
+[PostgreSQL]
 database = DATABASENAME
 user = USERNAME
 password = PASSWORD
 host = IP.IP.IP.IP
 port = 5432 
 
-[VISITOR]
-database = DATABASENAME
-user = USERNAME
-password = PASSWORD
-host = IP.IP.IP.IP
-port = 5432 
+[Server]
+path = THE/DEFAULT/PATH/TO/STORE/DATA
