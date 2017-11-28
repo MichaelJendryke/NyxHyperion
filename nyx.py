@@ -9,6 +9,8 @@ import pycurl
 from io import StringIO,BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import math
+from hashlib import md5
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -19,6 +21,7 @@ cfg_password = config['PostgreSQL']['password']
 cfg_host = config['PostgreSQL']['host']
 cfg_port = config['PostgreSQL']['port']
 cfg_path = config['Server']['path']
+cfg_limit = int(config['Server']['limit'])
 
 class sql:
 	def connect(self):
@@ -125,6 +128,11 @@ class sql:
 		data = (s,o)
 		self.update(SQL,data)
 
+	def setImageStatus(self, o, f, s):
+		SQL = "UPDATE images set status = %s where ordernumber = %s AND file_name = %s"
+		data = (s, o, f)
+		self.update(SQL,data)
+
 class ftp:
 	def dirlist(self,u):
 		# lets create a buffer in which we will write the output
@@ -158,7 +166,7 @@ class ftp:
 			c.setopt(c.URL, u)
 			c.setopt(c.WRITEDATA, f)
 			c.setopt(c.NOPROGRESS,0)
-			print('downloading file {f}'.format(f = os.path.basename(o)))
+			print('INFO: Downloading file from {u} to {o}'.format(o = o,u = u))
 			try:
 				c.perform()
 			except:
@@ -234,27 +242,45 @@ class manifest():
 		sql_c = sql()
 		comment = root.find('comment').text
 		total_files = int(root.find('total_files').text)
-		print(comment, total_files)
-		counter = 1
+		counter = 0
 		for lineitem in root.findall('./line_item'):
-			noaaid = lineitem.get('id')
-			file_name = lineitem.find('item/file_name').text
-			file_size = lineitem.find('item/file_size').text
-			creation_date = lineitem.find('item/creation_date').text
-			creation_date = datetime.strptime(creation_date, "%Y-%m-%dT%H:%M:%SZ")
-			expiration_date = lineitem.find('item/expiration_date').text
-			expiration_date =  datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
+			try:
+				noaaid = lineitem.get('id')
+				file_name = lineitem.find('item/file_name').text
+				file_size = lineitem.find('item/file_size').text
+				creation_date = lineitem.find('item/creation_date').text
+				creation_date = datetime.strptime(creation_date, "%Y-%m-%dT%H:%M:%SZ")
+				expiration_date = lineitem.find('item/expiration_date').text
+				expiration_date =  datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
+			except:
+				print('ERROR: Cannot read all values in Manifest',str(xmlfile))
+			
 			try:
 				checksum = lineitem.find('item/checksum').text
 			except:
 				print('ERROR: Manifest at',str(xmlfile),'does not include checksum')
 				checksum = None
+
 			print('INFO: Loading data to database table images:',noaaid, file_name, file_size, creation_date, expiration_date, checksum)
-			#SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s);" # Note: no quotes
-			#data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
-			#sql_c.insert(SQL,data) #NEEDS to be wrapped in a try statement
-			counter += 1
-		if total_files == counter:
+			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size,noaaid) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s,%s);" # Note: no quotes
+			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size,noaaid)
+			try:
+				#sql_c.insert(SQL,data)
+				print('insert')
+			except:
+				print('ERROR: Information for this image and order already present?')
+
+		SQL = "UPDATE orders set notice = %s WHERE ordernumber = %s" 
+		data = (comment, orderNumber)
+		try:
+			sql_c.insert(SQL,data)
+		except:
+			print('ERROR: Cannot insert in database')
+
+		SQL = "SELECT COUNT(ordernumber) FROM images WHERE ordernumber = %s"
+		data = (orderNumber,)
+		count = sql_c.select(SQL, data)
+		if total_files == count[0][0]: #get the only element that the query returns
 			return 1
 		else:
 			return 0
@@ -300,26 +326,68 @@ class utils:
 	        else:
 	            sys.stdout.write('Please respond with \'yes\' or \'no\' (or \'y\' or \'n\').')
 
+	def freespace(self, d):
+		foldersize = int(math.floor(self.getFolderSize(d)/1024**3)) 
+		if foldersize > (cfg_limit -1): # -1 to be sure to be under the limit 
+			r = 0
+		else:
+			r = 1
+		return r
+
+	def getFolderSize(self, d):
+	    total_size = 0
+	    for dirpath, dirnames, filenames in os.walk(d):
+	        for f in filenames:
+	            fp = os.path.join(dirpath, f)
+	            total_size += os.path.getsize(fp)
+	    return total_size
+
+	def md5sum(self, filename): # https://bitbucket.org/prologic/tools/src/tip/md5sum?fileviewer=file-view-default
+	    hash = md5()
+	    with open(filename, "rb") as f:
+	        for chunk in iter(lambda: f.read(128 * hash.block_size), b""):
+	            hash.update(chunk)
+	    return hash.hexdigest()
+
 class image:
 	def download(self):
-		s = sql()
-		f = ftp()
-		print('actually downloading images')
-		SQL = ("select * from downloadimages")
+		sql_c = sql()
+		ftp_c = ftp()
+		utils_c = utils()
+		SQL = "SELECT * FROM downloadimages" # all that are not finished
 		data = ('',)
-		rows = s.select(SQL,data)
+		rows = sql_c.select(SQL,data)
 		for row in rows:
 				orderNumber = row[0]
 				filename = row[1]
 				destination = row[2]
 				server = row[3]
 				checksum = row[4]
-				dest = os.path.join(destination,str(orderNumber),str(filename))
-				url = 'ftp://ftp.class.{s}.noaa.gov/{o}/001/{f}'.format(s=server,o=orderNumber,f=filename)
-				print('Downloading',filename,'from', url)
-				res = f.file(str(url),str(dest))
-				print(res)
-		return 'done'
+				if not utils_c.freespace(destination):
+					print('ERROR: Not enough space on server the limit is {l}GB'.format(l = cfg_limit))
+					exit()
+				else:
+					dest = os.path.join(destination,str(orderNumber),str(filename))
+					url = 'ftp://ftp.class.{s}.noaa.gov/{o}/001/{f}'.format(s=server,o=orderNumber,f=filename)
+					res = ftp_c.file(str(url),str(dest))
+					print('INFO: Finished with {r}'.format(r = res))
+					if not checksum == '':
+						if self.checksumcheck(dest,checksum.replace('-', '')) & str(res) == '':
+							sql_c.setImageStatus(orderNumber,filename,'FINISHED')
+						else:
+							sql_c.setImageStatus(orderNumber,filename,'ERROR')
+					else:
+						print('INFO: non-verified download of {d}'.format(d = dest))
+						sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
+
+	def checksumcheck(self,d,c):
+		utils_c = utils()
+		filechecksum = utils_c.md5sum(d)
+		xmlchecksum = c
+		if filechecksum == xmlchecksum:
+			return 1
+		else:
+			return 0
 
 class order:
 	def add(self, orderNumber, server, directory):
@@ -447,7 +515,7 @@ def main(argv):
 	elif mode == 'processManifest':
 		manifest_c.process()
 	elif mode == 'downloadImages':
-		i.download()
+		image_c.download()
 	elif mode == 'deleteOrder':
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
 		order_c.delete(orderNumber)
