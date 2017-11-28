@@ -47,11 +47,15 @@ class sql:
 		conn, cur = self.connect()
 		try:
 			cur.execute(s,d)
-		except psycopg2.OperationalError as e:
-			print('ERROR: Cannot INSERT into table')
-			print('{message}'.format(message=str(e)))
+		except psycopg2.Error as e:
+			print('ERROR: {message}'.format(message=str(e)))
 			exit()
-		conn.commit()
+		try:
+			res = conn.commit()
+			return res
+		except psycopg2.Error as e:
+			print('ERROR: {message}'.format(message=str(e)))
+			exit()
 		self.disconnect(conn, cur)
 
 	def update(self,s,d):
@@ -91,9 +95,9 @@ class sql:
 			  '|{i: >4}'.format(i='D'),
 			  '|{i: >4}'.format(i='T'),
 			  '|{i: >8}'.format(i='S [GB]'),
-			  '|{i: <20}|'.format(i='Destination'))
+			  '|{i: <70}|'.format(i='Destination'))
 
-		print('----------------------------------------------------------------------------------')
+		print('-----------------------------------------------------------------------------------------------------------------------------------')
 		for row in rows:
 			c1 = '|{i: >{width}}'.format(i=row[0],width=12)
 			c2 = '|{i: ^{width}}'.format(i=row[1],width=15)
@@ -105,9 +109,9 @@ class sql:
 			else:
 				c6 = '|{0: >#08.2f}'. format(float(row[5]))
 			if row[6] is None:
-				c7 = '|{i: <{width}}|'.format(i='',width=20)
+				c7 = '|{i: <{width}}|'.format(i='',width=70)
 			else:
-				c7 = '|{i: <{width}}|'.format(i=row[6],width=20)
+				c7 = '|{i: <{width}}|'.format(i=row[6],width=70)
 			print(c1,c2,c3,c4,c5,c6,c7)
 
 
@@ -137,33 +141,55 @@ class ftp:
 		c.setopt(pycurl.WRITEFUNCTION, buffer.write)
 		
 		# lets perform the LIST operation
-		c.perform()
-
+		try:
+			c.perform()
+		except:
+			code = c.getinfo(pycurl.HTTP_CODE)
+			print('ERROR: cURL HTTP_CODE:', code)
 		c.close()
 		
 		# lets get the buffer in a string
 		body = buffer.getvalue()
 		return body
 
-	def file(self, url, out):
-		with open(out, 'wb') as f:
-		    c = pycurl.Curl()
-		    c.setopt(c.URL, url)
-		    c.setopt(c.WRITEDATA, f)
-		    c.setopt(c.NOPROGRESS,0)
-		    try:
-		    	c.perform()
-		    except:
-		    	print('File',url, 'not avaliable')
-		    code = c.getinfo(pycurl.HTTP_CODE)
-		    c.close()
-		    return code
-
+	def file(self, u, o):
+		with open(o, 'wb') as f:
+			c = pycurl.Curl()
+			c.setopt(c.URL, u)
+			c.setopt(c.WRITEDATA, f)
+			c.setopt(c.NOPROGRESS,0)
+			print('downloading file {f}'.format(f = os.path.basename(o)))
+			try:
+				c.perform()
+			except:
+				code = c.getinfo(pycurl.HTTP_CODE)
+				print('ERROR: cURL HTTP_CODE:', code)
+			c.close()
 
 class manifest():
+	def download(self,u,p,o):
+		sql_c = sql()
+		manifestname = self.getName(u)
+		if manifestname == '':
+			print('ERROR: There seems to be no Manifest file for order {number}'.format(number=o))
+			sql_c.setOrderStatus(o,'NOMANIFEST')
+		else:
+			u += manifestname
+			p = os.path.join(p,manifestname)
+			ftp_c = ftp()
+			sql_c = sql()
+			ftp_c.file(u,p)
+			if os.path.exists(p): #also check file size here
+				SQL = "UPDATE orders set manifest = %s WHERE ordernumber = %s"
+				data = (manifestname,o)
+				sql_c.update(SQL,data)
+				sql_c.setOrderStatus(o,'MANIFEST')
+			else:
+				print('ERROR: There is no Manifest for order %s',o)
+
 	def getName(self,u): #url, location, ordernumber, path
-		f = ftp()
-		result = f.dirlist(u)
+		ftp_c = ftp()
+		result = ftp_c.dirlist(u)
 		# lets print the string on screen
 		# print(result.decode('iso-8859-1'))
 		# FTP LIST buffer is separated by \r\n
@@ -181,34 +207,37 @@ class manifest():
 		    #print(parts[8]) # * is the filename of the directory listing
 		    if parts[8].endswith(suffix):
 		    	manifestname = parts[8]
-		if manifestname == '':
-			SQL = "UPDATE orders set manifest = %s, status = %s where ordernumber = %s"
-			data = ('No manifest on server','NOMANIFEST',o)
-			s = sql()
-			s.update(SQL,data)
-		else:
-			return manifestname
+		return manifestname
 
-	def download(self,u,p,o):
-		manifestname = self.getName(u)
-		u += manifestname
-		p = os.path.join(p,manifestname)
-		f = ftp()
-		s = sql()
-		f.file(u,p)
-		if os.path.exists(p): #also check file size here
-			SQL = "UPDATE orders set manifest = %s, status = %s where ordernumber = %s"
-			data = (manifestname,'MANIFEST',o)
-			s.update(SQL,data)
-		else:
-			print('There is no Manifest for order %s',o)
+	def process(self):
+		sql_c = sql()
+		SQL = ("SELECT * FROM processmanifest")
+		data = ('',)
+		rows = sql_c.select(SQL,data)
+		print('INFO: Processing Manifest for',len(rows),'orders with the status MANIFEST')
+
+		for row in rows:
+			orderNumber = row[0]
+			path = row[1]
+			manifest = row[2]
+			if os.path.exists(os.path.join(path, str(orderNumber), manifest)):
+				if self.loadxml(os.path.join(path,str(orderNumber),manifest),orderNumber):
+					sql_c.setOrderStatus(str(orderNumber),'READY')
+				else:
+					sql_c.setOrderStatus(str(orderNumber),'ERROR')
+		exit()
 
 	def loadxml(self,xmlfile,orderNumber):
 		print('INFO: Loading XML Manifest file', str(xmlfile),'into table images')
 		tree = ET.parse(xmlfile)
 		root = tree.getroot()
-		s = sql()
+		sql_c = sql()
+		comment = root.find('comment').text
+		total_files = root.find('total_files')
+		print(comment, total_files)
+		counter = 1
 		for lineitem in root.findall('./line_item/item'):
+			noaaid = lineitem.get('id')
 			file_name = lineitem.find('file_name').text
 			file_size = lineitem.find('file_size').text
 			creation_date = lineitem.find('creation_date').text
@@ -220,35 +249,15 @@ class manifest():
 			except:
 				print('ERROR: Manifest at',str(xmlfile),'does not include checksum')
 				checksum = None
-			print('INFO: Loading data to database table images:',file_name, file_size, creation_date, expiration_date, checksum)
-			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s);" # Note: no quotes
-			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
-			s.insert(SQL,data) #NEEDS to be wrapped in a try statement
-
-	def process(self):
-		s = sql()
-		SQL = ("SELECT ordernumber, path,manifest FROM orders WHERE status = 'MANIFEST'")
-		data = ('',)
-		rows = s.select(SQL,data)
-		print('INFO: Processing Manifest for',len(rows),'orders with the status MANIFEST')
-
-		for row in rows:
-			orderNumber = row[0]
-			path = row[1]
-			manifest = row[2]
-			if not os.path.exists(os.path.join(path,str(orderNumber),manifest)):
-				s.setOrderStatus(str(orderNumber),'NOMANIFEST')
-			else:
-				s.setOrderStatus(str(orderNumber),'LOADMANIFEST')
-				try:
-					self.loadxml(os.path.join(path,str(orderNumber),manifest),orderNumber)
-				except:
-					print(e = sys.exc_info()[0])
-					s.setOrderStatus(str(orderNumber),'ERROR')
-				else:
-					s.setOrderStatus(str(orderNumber),'READY')
-		exit()
-
+			print('INFO: Loading data to database table images:',noaaid, file_name, file_size, creation_date, expiration_date, checksum)
+			#SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s);" # Note: no quotes
+			#data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size)
+			#sql_c.insert(SQL,data) #NEEDS to be wrapped in a try statement
+			counter += 1
+		if total_files == counter:
+			return true
+		else:
+			return false
 
 class utils:
 	def deletefiles(self,dir):
@@ -317,7 +326,8 @@ class order:
 		SQL = "INSERT INTO orders (ordernumber, status, server,directory) VALUES (%s,%s,%s,%s);" # Note: no quotes
 		data = (orderNumber, "NEW", server, directory)
 		s = sql()
-		s.insert(SQL,data)
+		r = s.insert(SQL,data)
+		return r
 
 	def remove(self,o):
 		s = sql()
@@ -365,12 +375,12 @@ class checkInput:
 	def path(p):
 		utils_c = utils()
 		if p == '':
-			question = 'You have not provided a path with -p \nShould the data be stored at the default path {p}'.format(p=cfg_path)
+			question = 'Should the data be stored at the default path {p}'.format(p=cfg_path)
 			answer = utils_c.query_yes_no(question, default='yes')
 			if answer == 'yes':
 				return cfg_path
 			else:
-				print('Provide a directory like "-p D:\\TEMP\\noaa"')
+				print('Provide a directory like "-p /var/www/vhosts/geoinsight.xyz/noaa.geoinsight.xyz/NOAA"')
 				exit()
 		else:
 			return p
@@ -391,7 +401,6 @@ def create_arg_parser():
 					help='Path to the output directory')
 	return parser
 
-
 def main(argv):
 	sql_c = sql()
 	manifest_c = manifest()
@@ -410,23 +419,31 @@ def main(argv):
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
 		server = checkInput.server(parsed_args.server)
 		directory = checkInput.path(parsed_args.path)
-		order_c.add(orderNumber, server, directory)
+		if order_c.add(orderNumber, server, directory) is None:
+			print('Order added')
+		else:
+			print('There was an error, the order has not been added')
 	elif mode == 'getManifest':
-		#Check other argument
-		path = checkInput.path(parsed_args.path)
-		#NEED from database
-		SQL = "SELECT location, ordernumber, directory FROM orders WHERE status='NEW'"
+		print('Get the manifest for NEW orders')
+		SQL = "SELECT * FROM getmanifest"
 		data = ('',)
-		rows = s.select(SQL,data)
+		rows = sql_c.select(SQL,data)
+		sql_c = sql()
 		for row in rows:
-			location = str(row[0])
-			orderNumber = str(row[1])
+			orderNumber = str(row[0])			
+			server = str(row[1])
 			path = str(row[2])
-			url = (r'ftp://ftp.class.%s.noaa.gov/%s/' % (location,orderNumber))
+			url = 'ftp://ftp.class.{s}.noaa.gov/{o}/'.format(s=server,o=orderNumber)
 			destination = os.path.join(path,orderNumber)
-			if not os.path.isdir(destination):
-				os.mkdir(os.path.expanduser(destination))
-			manifest_c.download(url,destination,orderNumber)
+			if not os.path.isdir(path):
+				sql_c.setOrderStatus(orderNumber,'CHECKPATH')
+				print('This path does not exist on this server')
+				continue
+			else:
+				if not os.path.isdir(destination):
+					os.mkdir(os.path.expanduser(destination))
+				manifest_c.download(url,destination,orderNumber)
+
 	elif mode == 'processManifest':
 		manifest_c.process()
 	elif mode == 'downloadImages':
