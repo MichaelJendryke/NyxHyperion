@@ -7,3 +7,4 @@ port = 5432
 
 [Server]
 path = THE/DEFAULT/PATH/TO/STORE/DATA
+limit = 4 (an integer representing the maxmal foldersize in GB)
