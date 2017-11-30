@@ -64,7 +64,7 @@ class image:
 					print('WARNING: non-verified download of {d}'.format(d = dest))
 					sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
 
-				if c_sql.ordercomplete(int(orderNumber)):
+				if c_sql.ordercomplete(orderNumber) is True:
 					sql_c.setOrderStatus(orderNumber,'FINISHED')
 
 
@@ -338,7 +338,11 @@ class sql:
 		self.update(SQL,data)
 
 	def ordercomplete(self,o):
-		r = bool(self.select("SELECT ordercomplete(1234214)", ''))
+		conn, cur = self.connect()
+		cur.callproc("ordercomplete", [o,])
+		r = bool(cur.fetchall()[0][0])
+		conn.commit()
+		self.disconnect(conn, cur)
 		return r
 
 class utils:
@@ -468,15 +472,6 @@ def main(argv):
 	mode = parsed_args.mode
 
 	if mode == 'info':
-		
-		c_sql = sql()
-
-		if c_sql.ordercomplete(2911373465):
-			print('completed')
-		else:
-			print('not completed')
-
-
 		c_utils = utils()
 		print('Allowed foldersize for {d} is {s} [GB]'.format(d = cfg_path,s = cfg_limit))
 		size = c_utils.getFolderSize(cfg_path)/(1024**3)
