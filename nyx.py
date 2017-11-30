@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import math
 from hashlib import md5
+from prettytable import PrettyTable
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -73,55 +74,20 @@ class sql:
 		conn.commit()
 		self.disconnect(conn, cur)
 
-	def selectordertable(self):
-		SQL = "SELECT user_id, ordernumber, status from orders ORDER by user_id"
-		data = ('',)
-		r = self.select(SQL,data) #returns rows
-		return r
+	def printSQL(self, s, d):
+		conn, cur = self.connect()
+		cur.execute(s,d)
+		rows = cur.fetchall()
+		colnames = [desc[0] for desc in cur.description]
+		conn.commit()
+		self.disconnect(conn, cur)
 
-	def selectorders(self):
-		SQL = "SELECT user_id, ordernumber, status from orders WHERE status = %s ORDER by user_id"
-		data = ('NEW',)
-		r = self.select(SQL,data) #returns rows
-		return r
-
-	def selectprogresstable(self):
-		SQL = "SELECT * FROM public.progresstable;"
-		data = ('',)
-		r = self.select(SQL,data) #returns rows
-		return r
-
-	def printprogresstable(self,rows):
-		print('|{i: >12}'.format(i='OrderNumber'),
-			  '|{i: >15}'.format(i='Status'),
-			  '|{i: >4}'.format(i='N'),
-			  '|{i: >4}'.format(i='D'),
-			  '|{i: >4}'.format(i='T'),
-			  '|{i: >8}'.format(i='S [GB]'),
-			  '|{i: <70}|'.format(i='Destination'))
-
-		print('-----------------------------------------------------------------------------------------------------------------------------------')
+		x = PrettyTable(colnames)
+		x.padding_width = 1
+		x.max_table_width = 10
 		for row in rows:
-			c1 = '|{i: >{width}}'.format(i=row[0],width=12)
-			c2 = '|{i: ^{width}}'.format(i=row[1],width=15)
-			c3 = '|{i: >{width}}'.format(i=row[2],width=4)
-			c4 = '|{i: >{width}}'.format(i=row[3],width=4)
-			c5 = '|{i: >{width}}'.format(i=row[4],width=4)
-			if row[5] is None:
-				c6 = '|{0: >#08.2f}'. format(float(0))
-			else:
-				c6 = '|{0: >#08.2f}'. format(float(row[5]))
-			if row[6] is None:
-				c7 = '|{i: <{width}}|'.format(i='',width=70)
-			else:
-				c7 = '|{i: <{width}}|'.format(i=row[6],width=70)
-			print(c1,c2,c3,c4,c5,c6,c7)
-
-
-	def printtable(self,rows):
-		print("ID \t OrderNumber \t Status")
-		for row in rows:
-			print(row[0],"\t",row[1],"\t",row[2])
+			x.add_row(row)
+		print(x)
 
 	def setOrderStatus(self,o,s):
 		SQL = "UPDATE orders set status = %s where ordernumber = %s"
@@ -158,7 +124,8 @@ class ftp:
 		
 		# lets get the buffer in a string
 		body = buffer.getvalue()
-		return body
+		print(body)
+		return body #Returns Bytes!!!
 
 	def file(self, u, o):
 		with open(o, 'wb') as f:
@@ -202,7 +169,10 @@ class manifest():
 		# print(result.decode('iso-8859-1'))
 		# FTP LIST buffer is separated by \r\n
 		# lets split the buffer in lines
-		lines = result.decode('iso-8859-1').split('\r\n')
+		if not result.decode('iso-8859-1').find('\r\n') == -1:
+			lines = result.decode('iso-8859-1').split('\r\n')
+		else:
+			lines = result.decode('iso-8859-1').replace('\n','\r\n').split('\r\n')
 		counter = 0
 		suffix = '.xml'
 		manifestname = ''
@@ -223,7 +193,6 @@ class manifest():
 		data = ('',)
 		rows = sql_c.select(SQL,data)
 		print('INFO: Processing Manifest for',len(rows),'orders with the status MANIFEST')
-
 		for row in rows:
 			orderNumber = row[0]
 			path = row[1]
@@ -265,7 +234,7 @@ class manifest():
 			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size,noaaid) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s,%s);" # Note: no quotes
 			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size,noaaid)
 			try:
-				#sql_c.insert(SQL,data)
+				sql_c.insert(SQL,data)
 				print('insert')
 			except:
 				print('ERROR: Information for this image and order already present?')
@@ -365,20 +334,28 @@ class image:
 				checksum = row[4]
 				if not utils_c.freespace(destination):
 					print('ERROR: Not enough space on server the limit is {l}GB'.format(l = cfg_limit))
-					exit()
+					exit() #this will exit the whole program
 				else:
-					dest = os.path.join(destination,str(orderNumber),str(filename))
-					url = 'ftp://ftp.class.{s}.noaa.gov/{o}/001/{f}'.format(s=server,o=orderNumber,f=filename)
-					res = ftp_c.file(str(url),str(dest))
-					print('INFO: Finished with {r}'.format(r = res))
-					if not checksum == '':
-						if self.checksumcheck(dest,checksum.replace('-', '')) & str(res) == '':
-							sql_c.setImageStatus(orderNumber,filename,'FINISHED')
-						else:
-							sql_c.setImageStatus(orderNumber,filename,'ERROR')
-					else:
-						print('INFO: non-verified download of {d}'.format(d = dest))
-						sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
+					print('INFO: Still enough space, limit is {l}GB'.format(l = cfg_limit))
+				
+				#actually downloading the file
+				dest = os.path.join(destination,str(orderNumber),str(filename))
+				url = 'ftp://ftp.class.{s}.noaa.gov/{o}/001/{f}'.format(s=server,o=orderNumber,f=filename)
+				ftpres = ftp_c.file(str(url),str(dest))
+				
+				if ftpres is None:
+					print('INFO: Download completed')
+				else:
+					print('INFO: Finished with Error {r}'.format(r = ftpres))
+					sql_c.setImageStatus(orderNumber,filename,'ERROR')
+					continue #continiue with next row
+				
+				if (not checksum == '') and (self.checksumcheck(dest,checksum.replace('-', ""))):
+					print('INFO: Download md5 verified')
+					sql_c.setImageStatus(orderNumber,filename,'FINISHED')							
+				else:
+					print('WARNING: non-verified download of {d}'.format(d = dest))
+					sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
 
 	def checksumcheck(self,d,c):
 		utils_c = utils()
@@ -457,8 +434,10 @@ def create_arg_parser():
 	""""Creates and returns the ArgumentParser object."""
 	#https://stackoverflow.com/questions/14360389/getting-file-path-from-command-line-argument-in-python
 	parser = argparse.ArgumentParser(description='This program manages orders form NOAA CLASS')
-	parser.add_argument('-m','--mode',default="list", choices = ['list','addOrder','getManifest','processManifest','downloadImages','deleteOrder'],
+	parser.add_argument('-m','--mode',default="info", choices = ['info','list','addOrder','getManifest','processManifest','downloadImages','deleteOrder'],
 					help='What do you want to do?')
+	parser.add_argument('-v', '--view',default="overview", choices = ['overview','imagesummary','orders','images'],
+					help='Print a table or view')
 	parser.add_argument('-o', '--orderNumber',default="",
 					help='The Order Number from NOAA CLASS')
 	parser.add_argument('-s', '--status',default="",
@@ -479,9 +458,26 @@ def main(argv):
 	parsed_args = arg_parser.parse_args(sys.argv[1:])
 	mode = parsed_args.mode
 
+	if mode == 'info':
+		c_utils = utils()
+		print('Allowed foldersize for {d} is {s} [GB]'.format(d = cfg_path,s = cfg_limit))
+		size = c_utils.getFolderSize('D:\\TEMP\\noaa2')/(1024**3)
+		if size < cfg_limit:
+			print('Currently {:6.2f} [GB] are occupied, still {:6.2f} [GB] free.'.format(size, (cfg_limit - size)))
+		else:
+			print('Folder is full. You are {:6.2f} [GB] over the limit'.format((size - cfg_limit)))
+
 	if mode == 'list':
-		print('Current progress table')
-		sql_c.printprogresstable(sql_c.selectprogresstable())
+		if (parsed_args.view == '') or (parsed_args.view == 'overview'):
+			sql_c.printSQL("SELECT * FROM overview",'')
+		elif (parsed_args.view == 'imagesummary'):
+			sql_c.printSQL("SELECT * FROM imagesummary",'')
+		elif (parsed_args.view == 'orders'):
+			sql_c.printSQL("SELECT * FROM orders",'')
+		elif (parsed_args.view == 'images'):
+			sql_c.printSQL("SELECT * FROM images",'')
+		else:
+			print('Something went wrong')
 	elif mode == 'addOrder':
 		print('Add a new order')
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
