@@ -33,6 +33,7 @@ class image:
 		SQL = "SELECT * FROM downloadimages" # all that are not finished
 		data = ('',)
 		rows = sql_c.select(SQL,data)
+		print('INFO: {d} images to download'.format(d = len(rows)))
 		for row in rows:
 				orderNumber = row[0]
 				filename = row[1]
@@ -65,7 +66,7 @@ class image:
 					sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
 
 				if c_sql.ordercomplete(orderNumber) is True:
-					sql_c.setOrderStatus(orderNumber,'FINISHED')
+					c_sql.setOrderStatus(orderNumber,'FINISHED')
 
 
 	def checksumcheck(self,d,c):
