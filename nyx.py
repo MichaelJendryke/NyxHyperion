@@ -409,7 +409,7 @@ class utils:
 	            total_size += os.path.getsize(fp)
 	    return total_size
 
-	def getFileSize(self,d)
+	def getFileSize(self,d):
 		try:
 			b = os.path.getsize(d)
 			return b
@@ -544,7 +544,7 @@ def main(argv):
 		image_c.download()
 	elif mode == 'deleteOrder':
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-		order_c.delete(orderNumber)
+		order_c.remove(orderNumber)
 	elif mode == 'generateFootprint':
 		#proc.footprint.info()
 		proc.footprint.generate()
