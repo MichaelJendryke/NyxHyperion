@@ -60,9 +60,11 @@ class image:
 					sql_c.setImageStatus(orderNumber,filename,'ERROR')
 					continue #continiue with next row
 				
-				if  (not checksum == '') and 
-					(self.checksumcheck(dest,checksum.replace('-', ''))) and
-					(utils_c.getFileSize(dest) == filesize):
+				if  (
+						(not checksum == '') and 
+						(self.checksumcheck(dest,checksum.replace('-', ''))) and
+						(utils_c.getFileSize(dest) == filesize)
+					):
 					print('INFO: Download size and md5 verified')
 					sql_c.setImageStatus(orderNumber,filename,'FINISHED')							
 				else:
