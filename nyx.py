@@ -104,16 +104,19 @@ class order:
 			status = row[2]
 			directory = row[3]
 			folder = os.path.join(directory,str(orderNumber))
-			print('Order {order} [{notice}] has the status {status}'.format(order = orderNumber, notice = notice, status = status)
-			question = 'Are you sure you want to delete this order at {d} ?'.format(d=folder)
-			decision = query_yes_no(question,  default="yes")
+			print('Order {order} [{notice}] has the status {status}'.format(order = orderNumber, notice = notice, status = status))
+			question = 'Are you sure you want to delete this order at {d}?'.format(d = folder)
+			decision = utils_c.query_yes_no(question,  default="yes")
 			if decision == 'yes' and os.path.exists(folder):
 				utils_c.deletefiles(folder)
 				utils_c.deletefolder(folder)
 				if not os.path.exists(folder):
 					sql_c.setOrderStatus(orderNumber,'DELETED')
+			elif decision == 'no':
+				print('Nothing will be delete.')
 			else:
-				print('Nothing to delete.')
+				print('ERROR: {d} not a local folder.'.format(d = folder))
+				print('INFO: Are you on the right computer?')
 		exit()
 
 class manifest():
@@ -554,6 +557,7 @@ def main(argv):
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
 		order_c.remove(orderNumber)
 	elif mode == 'generateFootprint':
+		print('Do some processing')
 		#proc.footprint.info()
 		#proc.footprint.generate()
 		#proc.footprint.loadgeomtopgsql()
