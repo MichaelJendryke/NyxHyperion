@@ -12,6 +12,7 @@ from datetime import datetime
 import math
 from hashlib import md5
 from prettytable import PrettyTable
+import processing as proc
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -40,6 +41,7 @@ class image:
 				destination = row[2]
 				server = row[3]
 				checksum = row[4]
+				filesize = row[5]
 				if not utils_c.freespace(destination):
 					print('ERROR: Not enough space on server the limit is {l}GB'.format(l = cfg_limit))
 					exit() #this will exit the whole program
@@ -58,15 +60,17 @@ class image:
 					sql_c.setImageStatus(orderNumber,filename,'ERROR')
 					continue #continiue with next row
 				
-				if (not checksum == '') and (self.checksumcheck(dest,checksum.replace('-', ''))):
-					print('INFO: Download md5 verified')
+				if  (not checksum == '') and 
+					(self.checksumcheck(dest,checksum.replace('-', ''))) and
+					(utils_c.getFileSize(dest) == filesize):
+					print('INFO: Download size and md5 verified')
 					sql_c.setImageStatus(orderNumber,filename,'FINISHED')							
 				else:
-					print('WARNING: non-verified download of {d}'.format(d = dest))
-					sql_c.setImageStatus(orderNumber,filename,'FINISHED') # check in the database if the checksum was given, if not, it is non-verified download
+					print('ERROR: Download of {d} has errors'.format(d = dest))
+					sql_c.setImageStatus(orderNumber,filename,'ERROR') # check in the database if the checksum was given, if not, it is non-verified download
 
-				if c_sql.ordercomplete(orderNumber) is True:
-					c_sql.setOrderStatus(orderNumber,'FINISHED')
+				if sql_c.ordercomplete(orderNumber) is True:
+					sql_c.setOrderStatus(orderNumber,'FINISHED')
 
 
 	def checksumcheck(self,d,c):
@@ -403,6 +407,14 @@ class utils:
 	            total_size += os.path.getsize(fp)
 	    return total_size
 
+	def getFileSize(self,d)
+		try:
+			b = os.path.getsize(d)
+			return b
+		except:
+			print('file {file} does not exist or is inaccessible'.format(file = d))
+
+
 	def md5sum(self, filename): # https://bitbucket.org/prologic/tools/src/tip/md5sum?fileviewer=file-view-default
 	    hash = md5()
 	    with open(filename, "rb") as f:
@@ -448,7 +460,7 @@ def create_arg_parser():
 	""""Creates and returns the ArgumentParser object."""
 	#https://stackoverflow.com/questions/14360389/getting-file-path-from-command-line-argument-in-python
 	parser = argparse.ArgumentParser(description='This program manages orders form NOAA CLASS')
-	parser.add_argument('-m','--mode',default="info", choices = ['info','list','addOrder','getManifest','processManifest','downloadImages','deleteOrder'],
+	parser.add_argument('-m','--mode',default="info", choices = ['info','list','addOrder','getManifest','processManifest','downloadImages','deleteOrder','generateFootprint'],
 					help='What do you want to do?')
 	parser.add_argument('-v', '--view',default="overview", choices = ['overview','imagesummary','orders','images'],
 					help='Print a table or view')
@@ -531,6 +543,10 @@ def main(argv):
 	elif mode == 'deleteOrder':
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
 		order_c.delete(orderNumber)
+	elif mode == 'generateFootprint':
+		#proc.footprint.info()
+		proc.footprint.generate()
+		#proc.footprint.loadgeomtopgsql()
 
 	exit()
 
