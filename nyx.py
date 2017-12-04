@@ -88,30 +88,35 @@ class order:
 	def add(self, orderNumber, server, directory):
 		SQL = "INSERT INTO orders (ordernumber, status, server,directory) VALUES (%s,%s,%s,%s);" # Note: no quotes
 		data = (orderNumber, "NEW", server, directory)
-		s = sql()
-		r = s.insert(SQL,data)
+		sql_c = sql()
+		r = sql_c.insert(SQL,data)
 		return r
 
 	def remove(self,o):
-		s = sql()
+		sql_c = sql()
+		utils_c = utils()
 		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
 		data = (o,)
-		rows = s.select(SQL,data)
+		rows = sql_c.select(SQL,data)
 		for row in rows:
 			orderNumber = row[0]
 			notice = row[1]
 			status = row[2]
 			directory = row[3]
 			folder = os.path.join(directory,str(orderNumber))
-			print('Order', orderNumber,'(',notice, ') has the status', status)
-			question = 'Are you sure you want to delete this order at {d} ?'.format(d=folder)
-			decision = query_yes_no(question,  default="yes")
-			if decision == 'yes' and os.path.exists(folder):
-				self.deletefiles(folder)
-				self.deletefolder(folder)
-				s.setOrderStatus(row[0],'DELETED')
+			print('Order {order} [{notice}] has the status {status}'.format(order = orderNumber, notice = notice, status = status))
+			question = 'Are you sure you want to delete this order at {d}?'.format(d = folder)
+			decision = utils_c.query_yes_no(question,  default="yes")
+			if decision == 'yes':
+				utils_c.deletefiles(folder)
+				utils_c.deletefolder(folder)
+				if not os.path.exists(folder):
+					sql_c.setOrderStatus(orderNumber,'DELETED')
+			elif decision == 'no':
+				print('Nothing will be delete.')
 			else:
-				print('Nothing to delete.')
+				print('ERROR: {d} not a local folder.'.format(d = folder))
+				print('INFO: Are you on the right computer?')
 		exit()
 
 class manifest():
@@ -356,10 +361,17 @@ class utils:
 	def deletefiles(self,dir):
 		filelist = [ f for f in os.listdir(dir) ]
 		for f in filelist:
-			os.remove(os.path.join(dir, f))
+			byebye = os.path.join(dir, f)
+			if os.path.isfile(byebye):
+				os.remove(byebye)
+			else:
+				print('ERROR: {d} is not a local path'.format(d = byebye))
 
 	def deletefolder(self,dir):
-		os.rmdir(dir)
+		if os.path.exists(dir):
+			os.rmdir(dir)
+		else:
+			print('ERROR: {d} is not a local path'.format(d = dir))
 
 	def query_yes_no(self,question, default='yes'):
 	    """Ask a yes/no question via raw_input() and return their answer.
@@ -409,7 +421,7 @@ class utils:
 	            total_size += os.path.getsize(fp)
 	    return total_size
 
-	def getFileSize(self,d)
+	def getFileSize(self,d):
 		try:
 			b = os.path.getsize(d)
 			return b
@@ -544,10 +556,11 @@ def main(argv):
 		image_c.download()
 	elif mode == 'deleteOrder':
 		orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-		order_c.delete(orderNumber)
+		order_c.remove(orderNumber)
 	elif mode == 'generateFootprint':
+		print('Do some processing')
 		#proc.footprint.info()
-		proc.footprint.generate()
+		#proc.footprint.generate()
 		#proc.footprint.loadgeomtopgsql()
 
 	exit()

@@ -1,7 +1,7 @@
 import subprocess
 import os
 import uuid
-from osgeo import ogr
+#from osgeo import ogr
 
 class footprint:
 	def info():
