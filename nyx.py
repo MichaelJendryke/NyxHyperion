@@ -4,36 +4,29 @@
 import configparser
 import argparse
 import sys, os, getopt
-import psycopg2
 import pycurl
 from io import StringIO,BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import math
 from hashlib import md5
-from prettytable import PrettyTable
 import processing as proc
+import sql
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
 config.read(config_file)
-cfg_database = config['PostgreSQL']['database']
-cfg_user = config['PostgreSQL']['user']
-cfg_password = config['PostgreSQL']['password']
-cfg_host = config['PostgreSQL']['host']
-cfg_port = config['PostgreSQL']['port']
 cfg_path = config['Server']['path']
 cfg_limit = int(config['Server']['limit'])
 
 
 class image:
 	def download(self):
-		sql_c = sql()
 		ftp_c = ftp()
 		utils_c = utils()
 		SQL = "SELECT * FROM downloadimages" # all that are not finished
 		data = ('',)
-		rows = sql_c.select(SQL,data)
+		rows = sql.select(SQL,data)
 		print('INFO: {d} images to download'.format(d = len(rows)))
 		for row in rows:
 				orderNumber = row[0]
@@ -57,7 +50,7 @@ class image:
 					print('INFO: Download completed')
 				else:
 					print('INFO: Finished with Error {r}'.format(r = ftpres))
-					sql_c.setImageStatus(orderNumber,filename,'ERROR')
+					sql.setImageStatus(orderNumber,filename,'ERROR')
 					continue #continiue with next row
 				
 				if  (
@@ -66,13 +59,13 @@ class image:
 						(utils_c.getFileSize(dest) == filesize)
 					):
 					print('INFO: Download size and md5 verified')
-					sql_c.setImageStatus(orderNumber,filename,'FINISHED')							
+					sql.setImageStatus(orderNumber,filename,'FINISHED')							
 				else:
 					print('ERROR: Download of {d} has errors'.format(d = dest))
-					sql_c.setImageStatus(orderNumber,filename,'ERROR') # check in the database if the checksum was given, if not, it is non-verified download
+					sql.setImageStatus(orderNumber,filename,'ERROR') # check in the database if the checksum was given, if not, it is non-verified download
 
-				if sql_c.ordercomplete(orderNumber) is True:
-					sql_c.setOrderStatus(orderNumber,'FINISHED')
+				if sql.ordercomplete(orderNumber) is True:
+					sql.setOrderStatus(orderNumber,'FINISHED')
 
 
 	def checksumcheck(self,d,c):
@@ -88,16 +81,14 @@ class order:
 	def add(self, orderNumber, server, directory):
 		SQL = "INSERT INTO orders (ordernumber, status, server,directory) VALUES (%s,%s,%s,%s);" # Note: no quotes
 		data = (orderNumber, "NEW", server, directory)
-		sql_c = sql()
-		r = sql_c.insert(SQL,data)
+		r = sql.insert(SQL,data)
 		return r
 
 	def remove(self,o):
-		sql_c = sql()
 		utils_c = utils()
 		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
 		data = (o,)
-		rows = sql_c.select(SQL,data)
+		rows = sql.select(SQL,data)
 		for row in rows:
 			orderNumber = row[0]
 			notice = row[1]
@@ -111,7 +102,7 @@ class order:
 				utils_c.deletefiles(folder)
 				utils_c.deletefolder(folder)
 				if not os.path.exists(folder):
-					sql_c.setOrderStatus(orderNumber,'DELETED')
+					sql.setOrderStatus(orderNumber,'DELETED')
 			elif decision == 'no':
 				print('Nothing will be delete.')
 			else:
@@ -121,22 +112,20 @@ class order:
 
 class manifest():
 	def download(self,u,p,o):
-		sql_c = sql()
 		manifestname = self.getName(u)
 		if manifestname == '':
 			print('ERROR: There seems to be no Manifest file for order {number}'.format(number=o))
-			sql_c.setOrderStatus(o,'NOMANIFEST')
+			sql.setOrderStatus(o,'NOMANIFEST')
 		else:
 			u += manifestname
 			p = os.path.join(p,manifestname)
 			ftp_c = ftp()
-			sql_c = sql()
 			ftp_c.file(u,p)
 			if os.path.exists(p): #also check file size here
 				SQL = "UPDATE orders set manifest = %s WHERE ordernumber = %s"
 				data = (manifestname,o)
-				sql_c.update(SQL,data)
-				sql_c.setOrderStatus(o,'MANIFEST')
+				sql.update(SQL,data)
+				sql.setOrderStatus(o,'MANIFEST')
 			else:
 				print('ERROR: There is no Manifest for order %s',o)
 
@@ -166,10 +155,9 @@ class manifest():
 		return manifestname
 
 	def process(self):
-		sql_c = sql()
 		SQL = ("SELECT * FROM processmanifest")
 		data = ('',)
-		rows = sql_c.select(SQL,data)
+		rows = sql.select(SQL,data)
 		print('INFO: Processing Manifest for',len(rows),'orders with the status MANIFEST')
 		for row in rows:
 			orderNumber = row[0]
@@ -177,16 +165,15 @@ class manifest():
 			manifest = row[2]
 			if os.path.exists(os.path.join(path, str(orderNumber), manifest)):
 				if self.loadxml(os.path.join(path,str(orderNumber),manifest),orderNumber) == 1:
-					sql_c.setOrderStatus(str(orderNumber),'READY')
+					sql.setOrderStatus(str(orderNumber),'READY')
 				else:
-					sql_c.setOrderStatus(str(orderNumber),'ERROR')
+					sql.setOrderStatus(str(orderNumber),'ERROR')
 		exit()
 
 	def loadxml(self,xmlfile,orderNumber):
 		print('INFO: Loading XML Manifest file', str(xmlfile),'into table images')
 		tree = ET.parse(xmlfile)
 		root = tree.getroot()
-		sql_c = sql()
 		comment = root.find('comment').text
 		total_files = int(root.find('total_files').text)
 		counter = 0
@@ -212,7 +199,7 @@ class manifest():
 			SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size,noaaid) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s,%s);" # Note: no quotes
 			data = (os.path.basename(xmlfile),file_name,checksum,orderNumber,creation_date,expiration_date,'NEW',file_size,noaaid)
 			try:
-				sql_c.insert(SQL,data)
+				sql.insert(SQL,data)
 				print('insert')
 			except:
 				print('ERROR: Information for this image and order already present?')
@@ -220,13 +207,13 @@ class manifest():
 		SQL = "UPDATE orders set notice = %s, manifesttotal = %s WHERE ordernumber = %s" 
 		data = (comment, total_files, orderNumber)
 		try:
-			sql_c.insert(SQL,data)
+			sql.insert(SQL,data)
 		except:
 			print('ERROR: Cannot insert in database')
 
 		SQL = "SELECT COUNT(ordernumber) FROM images WHERE ordernumber = %s"
 		data = (orderNumber,)
-		count = sql_c.select(SQL, data)
+		count = sql.select(SQL, data)
 		if total_files == count[0][0]: #get the only element that the query returns
 			return 1
 		else:
@@ -274,98 +261,16 @@ class ftp:
 				print('ERROR: cURL HTTP_CODE:', code)
 			c.close()
 
-class sql:
-	def connect(self):
-		try:
-			connection = psycopg2.connect(database=cfg_database, user = cfg_user, password = cfg_password, host = cfg_host, port = cfg_port)
-		except psycopg2.OperationalError as e:
-			print('ERROR: Cannot connect to database')
-			print('{message}'.format(message=str(e)))
-			exit()
-		cursor = connection.cursor()
-		return connection,cursor
-
-	def disconnect(self,connection,cursor):
-		cursor.close()
-		connection.close()
-
-	def select(self,s,d):
-		conn, cur = self.connect()
-		cur.execute(s,d)
-		rows = cur.fetchall()
-		conn.commit()
-		self.disconnect(conn, cur)
-		return rows
-
-	def insert(self,s,d):
-		conn, cur = self.connect()
-		try:
-			cur.execute(s,d)
-		except psycopg2.Error as e:
-			print('ERROR: {message}'.format(message=str(e)))
-			exit()
-		try:
-			res = conn.commit()
-			return res
-		except psycopg2.Error as e:
-			print('ERROR: {message}'.format(message=str(e)))
-			exit()
-		self.disconnect(conn, cur)
-
-	def update(self,s,d):
-		conn, cur = self.connect()
-		cur.execute(s,d)
-		conn.commit()
-		self.disconnect(conn, cur)
-
-	def delete(self,s,d):
-		conn, cur = self.connect()
-		cur.execute(s,d)
-		conn.commit()
-		self.disconnect(conn, cur)
-
-	def printSQL(self, s, d):
-		conn, cur = self.connect()
-		cur.execute(s,d)
-		rows = cur.fetchall()
-		colnames = [desc[0] for desc in cur.description]
-		conn.commit()
-		self.disconnect(conn, cur)
-
-		x = PrettyTable(colnames)
-		x.padding_width = 1
-		x.max_table_width = 10
-		for row in rows:
-			x.add_row(row)
-		print(x)
-
-	def setOrderStatus(self,o,s):
-		SQL = "UPDATE orders set status = %s where ordernumber = %s"
-		data = (s,o)
-		self.update(SQL,data)
-
-	def setImageStatus(self, o, f, s):
-		SQL = "UPDATE images set status = %s where ordernumber = %s AND file_name = %s"
-		data = (s, o, f)
-		self.update(SQL,data)
-
-	def ordercomplete(self,o):
-		conn, cur = self.connect()
-		cur.callproc("ordercomplete", [o,])
-		r = bool(cur.fetchall()[0][0])
-		conn.commit()
-		self.disconnect(conn, cur)
-		return r
-
 class utils:
 	def deletefiles(self,dir):
-		filelist = [ f for f in os.listdir(dir) ]
-		for f in filelist:
-			byebye = os.path.join(dir, f)
-			if os.path.isfile(byebye):
-				os.remove(byebye)
-			else:
-				print('ERROR: {d} is not a local path'.format(d = byebye))
+		if os.path.exists(dir):
+			filelist = [ f for f in os.listdir(dir) ]
+			for f in filelist:
+				byebye = os.path.join(dir, f)
+				if os.path.isfile(byebye):
+					os.remove(byebye)
+				else:
+					print('ERROR: {d} is not a local path'.format(d = byebye))
 
 	def deletefolder(self,dir):
 		if os.path.exists(dir):
@@ -470,6 +375,28 @@ class checkInput:
 		else:
 			return p
 
+	def datadir(dir):
+		utils_c = utils()
+		if dir == '':
+			print('ERROR: Provide a directory like "-d /home/mydata" (this should point to the directory with all your order folders')
+			exit()
+		elif not os.path.exists(dir):
+			print('ERROR: Data directory {d} does not exist'.format(d = dir))
+			exit()
+		else:
+			return dir
+
+	def workingdir(dir):
+		utils_c = utils()
+		if dir == '':
+			print('ERROR: Provide a temporary working directory like "-w /tmp" (this should point to the directory outside of datadir')
+			exit()
+		elif not os.path.exists(dir):
+			print('ERROR: Working directory {d} does not exist'.format(d = dir))
+			exit()
+		else:
+			return dir
+
 def create_arg_parser():
 	""""Creates and returns the ArgumentParser object."""
 	#https://stackoverflow.com/questions/14360389/getting-file-path-from-command-line-argument-in-python
@@ -486,10 +413,13 @@ def create_arg_parser():
 					help='The location of the order')	
 	parser.add_argument('-p',  '--path',default="",
 					help='Path to the output directory')
+	parser.add_argument('-d',  '--datadir',default="",
+					help='Path to your data directory (this is used for generateFootprint)')
+	parser.add_argument('-w',  '--workingdir',default="",
+					help='Path to your working directory (this is used for generateFootprint)')
 	return parser
 
 def main(argv):
-	sql_c = sql()
 	manifest_c = manifest()
 	image_c = image()
 	order_c = order()
@@ -509,13 +439,13 @@ def main(argv):
 
 	elif mode == 'list':
 		if (parsed_args.view == '') or (parsed_args.view == 'overview'):
-			sql_c.printSQL("SELECT * FROM overview",'')
+			sql.printSQL("SELECT * FROM overview",'')
 		elif (parsed_args.view == 'imagesummary'):
-			sql_c.printSQL("SELECT * FROM imagesummary",'')
+			sql.printSQL("SELECT * FROM imagesummary",'')
 		elif (parsed_args.view == 'orders'):
-			sql_c.printSQL("SELECT * FROM orders",'')
+			sql.printSQL("SELECT * FROM orders",'')
 		elif (parsed_args.view == 'images'):
-			sql_c.printSQL("SELECT * FROM images",'')
+			sql.printSQL("SELECT * FROM images",'')
 		else:
 			print('Something went wrong')
 	
@@ -533,8 +463,7 @@ def main(argv):
 		print('Get the manifest for NEW orders')
 		SQL = "SELECT * FROM getmanifest"
 		data = ('',)
-		rows = sql_c.select(SQL,data)
-		sql_c = sql()
+		rows = sql.select(SQL,data)
 		for row in rows:
 			orderNumber = str(row[0])			
 			server = str(row[1])
@@ -542,7 +471,7 @@ def main(argv):
 			url = 'ftp://ftp.class.{s}.noaa.gov/{o}/'.format(s=server,o=orderNumber)
 			destination = os.path.join(path,orderNumber)
 			if not os.path.isdir(path):
-				sql_c.setOrderStatus(orderNumber,'CHECKPATH')
+				sql.setOrderStatus(orderNumber,'CHECKPATH')
 				print('This path does not exist on this server')
 				continue
 			else:
@@ -559,9 +488,10 @@ def main(argv):
 		order_c.remove(orderNumber)
 	elif mode == 'generateFootprint':
 		print('Do some processing')
-		#proc.footprint.info()
-		#proc.footprint.generate()
-		#proc.footprint.loadgeomtopgsql()
+		datadir = checkInput.datadir(parsed_args.datadir)
+		workingdir = checkInput.workingdir(parsed_args.workingdir)
+		proc.footprint.info()
+		proc.footprint.generate(datadir,workingdir)
 
 	exit()
 
