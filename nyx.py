@@ -9,9 +9,9 @@ from io import StringIO,BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import math
-from hashlib import md5
 import processing as proc
 import sql
+import utilities
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -23,7 +23,6 @@ cfg_limit = int(config['Server']['limit'])
 class image:
 	def download(self):
 		ftp_c = ftp()
-		utils_c = utils()
 		SQL = "SELECT * FROM downloadimages" # all that are not finished
 		data = ('',)
 		rows = sql.select(SQL,data)
@@ -35,7 +34,7 @@ class image:
 				server = row[3]
 				checksum = row[4]
 				filesize = row[5]
-				if not utils_c.freespace(destination):
+				if not utilities.freespace(destination):
 					print('ERROR: Not enough space on server the limit is {l}GB'.format(l = cfg_limit))
 					exit() #this will exit the whole program
 				else:
@@ -56,7 +55,7 @@ class image:
 				if  (
 						(not checksum == '') and 
 						(self.checksumcheck(dest,checksum.replace('-', ''))) and
-						(utils_c.getFileSize(dest) == filesize)
+						(utilities.getFileSize(dest) == filesize)
 					):
 					print('INFO: Download size and md5 verified')
 					sql.setImageStatus(orderNumber,filename,'FINISHED')							
@@ -69,8 +68,7 @@ class image:
 
 
 	def checksumcheck(self,d,c):
-		utils_c = utils()
-		filechecksum = utils_c.md5sum(d)
+		filechecksum = utilities.md5sum(d)
 		xmlchecksum = c
 		if filechecksum == xmlchecksum:
 			return 1
@@ -85,7 +83,6 @@ class order:
 		return r
 
 	def remove(self,o):
-		utils_c = utils()
 		SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
 		data = (o,)
 		rows = sql.select(SQL,data)
@@ -97,10 +94,10 @@ class order:
 			folder = os.path.join(directory,str(orderNumber))
 			print('Order {order} [{notice}] has the status {status}'.format(order = orderNumber, notice = notice, status = status))
 			question = 'Are you sure you want to delete this order at {d}?'.format(d = folder)
-			decision = utils_c.query_yes_no(question,  default="yes")
+			decision = utilities.query_yes_no(question,  default="yes")
 			if decision == 'yes':
-				utils_c.deletefiles(folder)
-				utils_c.deletefolder(folder)
+				utilities.deletefiles(folder)
+				utilities.deletefolder(folder)
 				if not os.path.exists(folder):
 					sql.setOrderStatus(orderNumber,'DELETED')
 			elif decision == 'no':
@@ -262,84 +259,6 @@ class ftp:
 			c.close()
 
 class utils:
-	def deletefiles(self,dir):
-		if os.path.exists(dir):
-			filelist = [ f for f in os.listdir(dir) ]
-			for f in filelist:
-				byebye = os.path.join(dir, f)
-				if os.path.isfile(byebye):
-					os.remove(byebye)
-				else:
-					print('ERROR: {d} is not a local path'.format(d = byebye))
-
-	def deletefolder(self,dir):
-		if os.path.exists(dir):
-			os.rmdir(dir)
-		else:
-			print('ERROR: {d} is not a local path'.format(d = dir))
-
-	def query_yes_no(self,question, default='yes'):
-	    """Ask a yes/no question via raw_input() and return their answer.
-	    
-	    "question" is a string that is presented to the user.
-	    "default" is the presumed answer if the user just hits <Enter>.
-	        It must be "yes" (the default), "no" or None (meaning
-	        an answer is required of the user).
-
-	    The "answer" return value is one of "yes" or "no".
-	    """
-	    # from http://code.activestate.com/recipes/577058-query-yesno/
-	    valid = {'yes':'yes',   'y':'yes',  'ye':'yes',
-	             'no':'no',     'n':'no'}
-	    if default == None:
-	        prompt = ' [y/n] '
-	    elif default == 'yes':
-	        prompt = ' [Y/n] '
-	    elif default == 'no':
-	        prompt = ' [y/N] '
-	    else:
-	        raise ValueError('invalid default answer: {d}'.format(d=default))
-
-	    while 1:
-	        sys.stdout.write(question + prompt)
-	        choice = input().lower()
-	        if default is not None and choice == '':
-	            return default
-	        elif choice in valid.keys():
-	            return valid[choice]
-	        else:
-	            sys.stdout.write('Please respond with \'yes\' or \'no\' (or \'y\' or \'n\').')
-
-	def freespace(self, d):
-		foldersize = int(math.floor(self.getFolderSize(d)/1024**3)) 
-		if foldersize > (cfg_limit -1): # -1 to be sure to be under the limit 
-			r = 0
-		else:
-			r = 1
-		return r
-
-	def getFolderSize(self, d):
-	    total_size = 0
-	    for dirpath, dirnames, filenames in os.walk(d):
-	        for f in filenames:
-	            fp = os.path.join(dirpath, f)
-	            total_size += os.path.getsize(fp)
-	    return total_size
-
-	def getFileSize(self,d):
-		try:
-			b = os.path.getsize(d)
-			return b
-		except:
-			print('file {file} does not exist or is inaccessible'.format(file = d))
-
-
-	def md5sum(self, filename): # https://bitbucket.org/prologic/tools/src/tip/md5sum?fileviewer=file-view-default
-	    hash = md5()
-	    with open(filename, "rb") as f:
-	        for chunk in iter(lambda: f.read(128 * hash.block_size), b""):
-	            hash.update(chunk)
-	    return hash.hexdigest()
 
 class checkInput:
 	def orderNumber(o):
@@ -363,10 +282,9 @@ class checkInput:
 			return l
 
 	def path(p):
-		utils_c = utils()
 		if p == '':
 			question = 'Should the data be stored at the default path {p}'.format(p=cfg_path)
-			answer = utils_c.query_yes_no(question, default='yes')
+			answer = utilities.query_yes_no(question, default='yes')
 			if answer == 'yes':
 				return cfg_path
 			else:
@@ -376,7 +294,6 @@ class checkInput:
 			return p
 
 	def datadir(dir):
-		utils_c = utils()
 		if dir == '':
 			print('ERROR: Provide a directory like "-d /home/mydata" (this should point to the directory with all your order folders')
 			exit()
@@ -387,7 +304,7 @@ class checkInput:
 			return dir
 
 	def workingdir(dir):
-		utils_c = utils()
+		utilities = utils()
 		if dir == '':
 			print('ERROR: Provide a temporary working directory like "-w /tmp" (this should point to the directory outside of datadir')
 			exit()
