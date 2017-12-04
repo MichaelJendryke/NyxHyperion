@@ -107,7 +107,7 @@ class order:
 			print('Order {order} [{notice}] has the status {status}'.format(order = orderNumber, notice = notice, status = status))
 			question = 'Are you sure you want to delete this order at {d}?'.format(d = folder)
 			decision = utils_c.query_yes_no(question,  default="yes")
-			if decision == 'yes' and os.path.exists(folder):
+			if decision == 'yes':
 				utils_c.deletefiles(folder)
 				utils_c.deletefolder(folder)
 				if not os.path.exists(folder):
@@ -359,12 +359,13 @@ class sql:
 
 class utils:
 	def deletefiles(self,dir):
-		if os.path.exists(dir):
-			filelist = [ f for f in os.listdir(dir) ]
-			for f in filelist:
-				os.remove(os.path.join(dir, f))
-		else:
-			print('ERROR: {d} is not a local path'.format(d = dir))
+		filelist = [ f for f in os.listdir(dir) ]
+		for f in filelist:
+			byebye = os.path.join(dir, f)
+			if os.path.isfile(byebye):
+				os.remove(byebye)
+			else:
+				print('ERROR: {d} is not a local path'.format(d = byebye))
 
 	def deletefolder(self,dir):
 		if os.path.exists(dir):
