@@ -37,13 +37,13 @@ class filesandfolders:
             r = 1
         return r
 
-        def getFolderSize(d):
-            total_size = 0
-            for dirpath, dirnames, filenames in os.walk(d):
-                for f in filenames:
-                    fp = os.path.join(dirpath, f)
-                    total_size += os.path.getsize(fp)
-            return total_size
+    def getFolderSize(d):
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(d):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                total_size += os.path.getsize(fp)
+        return total_size
 
     def getFileSize(d):
         try:

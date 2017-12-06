@@ -6,39 +6,77 @@ try:
 except Exception as e:
     print(e)
 import sql
+# from threading import Thread, current_thread
+import concurrent.futures
+import time
+import utilities
 
 
 class footprint:
     def info():
-            print('Generating Footprints')
+        print('Generating Footprints')
 
     def generate(datadir, tempdir):
         rows = sql.select("SELECT * FROM footprintmissing", '')
-        print('INFO: {num} images have no Footprint in table imagedata'.format(num=len(rows)))
-        for row in rows:
-            orderNumber = str(row[0])
-            filename = str(row[1])
+        # https://stackoverflow.com/a/15143994/1623867
+        # ThreadPoolExecutor for I/O bound operations
+        # ProcessPoolExecutor for CPU bound
+        multicore = False
+        start = time.time()
+        if multicore is True:
+            executor = concurrent.futures.ProcessPoolExecutor(1)
+            futures = [executor.submit(
+                footprint.processor, row, datadir, tempdir
+            ) for row in rows]
+            concurrent.futures.wait(futures)
+        else:
+            for row in rows:
+                footprint.processor(row, datadir, tempdir)
+        end = time.time()
+        print(end - start)
 
-            workingdir = os.path.join(tempdir, 'temp')
-            if not os.path.isdir(workingdir):
-                os.mkdir(os.path.expanduser(workingdir))
+    def try_my_operation(row, datadir, tempdir):
+        try:
+            print('ID: {ID} {row} {dd} {td}'.format(
+                ID=os.getpid(), row=row, dd=datadir, td=tempdir
+            ))
+        except:
+            print('error with item')
 
-            file = os.path.join(datadir, orderNumber, filename)
-            if not os.path.isfile(file):
-                print('WARNING: File {f} is not there'.format(f=file))
-            else:
-                print(datadir, workingdir, orderNumber, file)
-                out = footprint.extract(datadir, workingdir, orderNumber, file)
-                if os.path.exists(out):
-                    footprint.loadgeomtopgsql(out)
+    def processor(row, datadir, tempdir):
+        print('INFO: Process ID: {ID} {row} {dd} {td}'.format(
+            ID=os.getpid(),
+            row=row,
+            dd=datadir,
+            td=tempdir
+        ))
+        orderNumber = str(row[0])
+        filename = str(row[1])
+        noaaid = str(row[2])
 
-    def extract(basedir, workingdir, orderNumber, file):
+        workingdir = os.path.join(tempdir, 'temp')
+        if not os.path.isdir(workingdir):
+            os.mkdir(os.path.expanduser(workingdir))
+
+        file = os.path.join(datadir, orderNumber, filename)
+        if not os.path.isfile(file):
+            print('WARNING: File {f} is not there'.format(f=file))
+        else:
+            print(workingdir, orderNumber, file, filename, noaaid)
+
+            out = footprint.extract(workingdir, orderNumber, file)
+            # This will load the shape to the database if the file exists
+            if os.path.exists(out):
+                footprint.loadgeomtopgsql(out, filename, noaaid, orderNumber)
+        utilities.filesandfolders.deletefiles(workingdir)
+
+    def extract(workingdir, orderNumber, file):
         layer = '//All_Data/VIIRS-DNB-SDR_All/Radiance'
 
         # gdal_translate -of GTiff HDF5:"D:\TEMP\noaa2\GDNBO-SVDNB_npp_d20171125_t2100535_e2106339_b31503_c20171128024404585872_nobc_ops.h5"://All_Data/VIIRS-DNB-SDR_All/Radiance test.tif
         infile = 'HDF5:"{file}":{layer}'.format(file=file, layer=layer)
         r1 = '{u}{end}'.format(u=str(uuid.uuid4()), end='.tif')
-        outfile = os.path.join(workingdir, r1) # this should be different from basedir
+        outfile = os.path.join(workingdir, r1)  # this should be different from basedir
         gdaltranslate = '{tool} {of} {infile} {outfile}'.format(
             tool='gdal_translate',
             of='-of GTiff',
@@ -54,7 +92,7 @@ class footprint:
         outfile = os.path.join(workingdir, r2)
         gdalwarp = '{tool} {param} {of} {infile} {outfile}'.format(
             tool='gdalwarp',
-            param='-dstnodata 0 -dstalpha',
+            param='-ot Int16 -wt Int16 -dstnodata 0 -dstalpha',
             of='-of GTiff',
             infile=infile,
             outfile=outfile
@@ -73,7 +111,7 @@ class footprint:
             param2='-b 2 -f "ESRI Shapefile"',
             outfile=outfile
         )
-        
+
         print(polygonize)
         #  shell=True is very unsecure we have to fix this!
         subprocess.check_call(polygonize, shell=True)
@@ -89,14 +127,14 @@ class footprint:
             tool='ogr2ogr',
             outfile=outfile,
             infile=infile,
-            param='-simplify 10.0'
+            param='-simplify 0.2'
         )
         print(simplify)
         subprocess.check_call(simplify)
 
         return outfile
 
-    def loadgeomtopgsql(file):
+    def loadgeomtopgsql(file, filename, noaaid, orderNumber):
         reader = ogr.Open(file)
         layer = reader.GetLayer(0)
         try:
@@ -106,7 +144,24 @@ class footprint:
 
         for i in range(layer.GetFeatureCount()):
             feature = layer.GetFeature(i)
-            #print(feature.ExportToJson())
-            print(feature.geometry())
-            SQL = "INSERT INTO imagedata"
-            #INSERT INTO imagedata(footprint) SELECT ST_GeomFromText('POLYGON ((47.8986402364685 -19.9761359737374,77.2019166143206 -24.5331415521829,75.348830485111 -44.4051468911004,38.8567335982238 -38.6872585624496,47.8986402364685 -19.9761359737374))',4326)
+            # print(feature.ExportToJson())
+            geom = feature.geometry()
+            SQL = "INSERT INTO {table}(file_name, noaaid, orderNumber, footprint) SELECT '{fn}', {ni}, {on}, ST_GeomFromText('{geom}',{epsg})".format(
+                table='imagedata',
+                fn=filename,
+                ni=noaaid,
+                on=orderNumber,
+                geom=str(geom),
+                epsg=str(epsg)
+            )
+            data = ('',)
+            try:
+                sql.insert(SQL,data)
+            except Exception as e:
+                raise
+            else:
+                pass
+            finally:
+                pass
+
+            # INSERT INTO imagedata(footprint) SELECT ST_GeomFromText('POLYGON ((47.8986402364685 -19.9761359737374,77.2019166143206 -24.5331415521829,75.348830485111 -44.4051468911004,38.8567335982238 -38.6872585624496,47.8986402364685 -19.9761359737374))',4326)

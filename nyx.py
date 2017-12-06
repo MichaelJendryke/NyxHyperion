@@ -53,8 +53,8 @@ class checkInput:
 
     def datadir(dir):
         if dir == '':
-            print('ERROR: Provide a directory like "-d /home/mydata" \
-                (this should point to the directory with all your order folders')
+            print('ERROR:\tProvide a Data directory like "-d /home/mydata"')
+            print('\t(this should point to the directory with all your order folders)')
             exit()
         elif not os.path.exists(dir):
             print('ERROR: Data directory {d} does not exist'.format(d=dir))
@@ -64,8 +64,8 @@ class checkInput:
 
     def workingdir(dir):
         if dir == '':
-            print('ERROR: Provide a temporary working directory like "-w /tmp" \
-                (this should point to the directory outside of datadir')
+            print('ERROR:\tProvide a temporary working directory like "-w /tmp"')
+            print('\t(this should point to the directory outside of datadir)')
             exit()
         elif not os.path.exists(dir):
             print('ERROR: Working directory {d} does not exist'.format(d=dir))
