@@ -85,13 +85,12 @@ def printSQL(s, d):
     conn.commit()
     disconnect(conn, cur)
 
+    # https://pypi.python.org/pypi/tabulate
     table = []
-   
     for row in rows:
         r = []
         for col in row:
             r.append(col)
-        print(r)
         table.append(r)
     print(tabulate(table, headers=colnames, tablefmt="fancy_grid"))
 

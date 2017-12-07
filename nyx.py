@@ -28,7 +28,7 @@ class checkInput:
                 r = o
                 return r
         except ValueError:
-            print('Provide a valid ORDERNUMBER like "-o 12344256"')
+            print(o, ' is not a valid ORDERNUMBER, provide a valid ORDERNUMBER like "-o 12344256"')
             exit()
 
     def server(l):
@@ -41,7 +41,7 @@ class checkInput:
     def path(p):
         if p == '':
             question = 'Should the data be stored at the default path {p}'.format(p=cfg_path)
-            answer = utilities.queriies.query_yes_no(question, default='yes')
+            answer = utilities.queries.query_yes_no(question, default='yes')
             if answer == 'yes':
                 return cfg_path
             else:
@@ -168,15 +168,18 @@ def main(argv):
             print('Something went wrong')
     elif mode == 'addOrder':
         print('Add a new order')
-        print(parsed_args.orderNumber)
-        exit()
-        orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-        server = checkInput.server(parsed_args.server)
-        directory = checkInput.path(parsed_args.path)
-        if downloadmanager.order.add(orderNumber, server, directory) is None:
-            print('Order added')
-        else:
-            print('There was an error, the order has not been added')
+        for i in parsed_args.orderNumber:
+            orderNumber = checkInput.orderNumber(i)
+            server = checkInput.server(parsed_args.server)
+            directory = checkInput.path(parsed_args.path)
+            if downloadmanager.order.add(orderNumber, server, directory) is None:
+                print('Order {o} from Server {s} will be added at {p}'.format(
+                    o=orderNumber,
+                    s=server,
+                    p=directory
+                ))
+            else:
+                print('There was an error, the order has not been added')
     elif mode == 'getManifest':
         print('Get the manifest for NEW orders')
         SQL = "SELECT * FROM getmanifest"
