@@ -31,7 +31,7 @@ class image:
             server = row[3]
             checksum = row[4]
             filesize = row[5]
-            if not utilities.freespace(destination):
+            if not utilities.filesandfolders.freespace(destination):
                 print('ERROR: Not enough space on server the limit is {limit}GB'.format(
                     limit=cfg_limit)
                 )
@@ -59,7 +59,7 @@ class image:
                     # check in the database if the checksum was given, if not, it is non-verified download
                     (not checksum == '') and
                     (image.checksumcheck(dest, checksum.replace('-', ''))) and
-                    (utilities.getFileSize(dest) == filesize)
+                    (utilities.filesandfolders.getFileSize(dest) == filesize)
             ):
                 print('INFO: Download size and md5 verified')
                 sql.setImageStatus(orderNumber, filename, 'FINISHED')
@@ -71,7 +71,7 @@ class image:
                 sql.setOrderStatus(orderNumber, 'FINISHED')
 
     def checksumcheck(d, c):
-        filechecksum = utilities.md5sum(d)
+        filechecksum = utilities.filesandfolders.md5sum(d)
         xmlchecksum = c
         if filechecksum == xmlchecksum:
             return 1
@@ -103,10 +103,10 @@ class order:
                 status=status)
             )
             question = 'Are you sure you want to delete this order at {d}?'.format(d=folder)
-            decision = utilities.query_yes_no(question, default="yes")
+            decision = utilities.queries.query_yes_no(question, default="yes")
             if decision == 'yes':
-                utilities.deletefiles(folder)
-                utilities.deletefolder(folder)
+                utilities.filesandfolders.deletefiles(folder)
+                utilities.filesandfolders.deletefolder(folder)
                 if not os.path.exists(folder):
                     sql.setOrderStatus(orderNumber, 'DELETED')
             elif decision == 'no':
@@ -167,9 +167,9 @@ class manifest():
         for row in rows:
             orderNumber = row[0]
             path = row[1]
-            manifest = row[2]
-            if os.path.exists(os.path.join(path, str(orderNumber), manifest)):
-                if manifest.loadxml(os.path.join(path, str(orderNumber), manifest), orderNumber) == 1:
+            manifestfile = str(row[2])
+            if os.path.exists(os.path.join(path, str(orderNumber), manifestfile)):
+                if manifest.loadxml(os.path.join(path, str(orderNumber), manifestfile), orderNumber) == 1:
                     sql.setOrderStatus(str(orderNumber), 'READY')
                 else:
                     sql.setOrderStatus(str(orderNumber), 'ERROR')

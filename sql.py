@@ -94,13 +94,14 @@ def printSQL(s, d):
         table.append(r)
     print(tabulate(table, headers=colnames, tablefmt="fancy_grid"))
 
+
 def setOrderStatus(o, s):
     SQL = "UPDATE orders set status = %s where ordernumber = %s"
     data = (s, o)
     update(SQL, data)
 
 
-def setImageStatus(self, o, f, s):
+def setImageStatus(o, f, s):
     SQL = "UPDATE images set status = %s where ordernumber = %s AND file_name = %s"
     data = (s, o, f)
     update(SQL, data)

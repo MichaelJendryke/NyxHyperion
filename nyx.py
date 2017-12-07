@@ -214,8 +214,9 @@ def main(argv):
     elif mode == 'downloadImages':
         downloadmanager.image.download()
     elif mode == 'deleteOrder':
-        orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-        downloadmanager.order.remove(orderNumber)
+        for i in parsed_args.orderNumber:
+            orderNumber = checkInput.orderNumber(i))
+            downloadmanager.order.remove(orderNumber)
     elif mode == 'generateFootprint':
         print('Do some processing')
         datadir = checkInput.datadir(parsed_args.datadir)
