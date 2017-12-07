@@ -106,6 +106,7 @@ def create_arg_parser():
     )
     parser.add_argument(
         '-o', '--orderNumber',
+        nargs='+',
         default="",
         help='The Order Number from NOAA CLASS'
     )
@@ -167,6 +168,8 @@ def main(argv):
             print('Something went wrong')
     elif mode == 'addOrder':
         print('Add a new order')
+        print(parsed_args.orderNumber)
+        exit()
         orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
         server = checkInput.server(parsed_args.server)
         directory = checkInput.path(parsed_args.path)

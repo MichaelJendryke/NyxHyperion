@@ -4,7 +4,7 @@ try:
 except:
     print('Cannot find psycopg2')
 import configparser
-from prettytable import PrettyTable
+from tabulate import tabulate
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -85,13 +85,15 @@ def printSQL(s, d):
     conn.commit()
     disconnect(conn, cur)
 
-    x = PrettyTable(colnames)
-    x.padding_width = 1
-    x.max_table_width = 10
+    table = []
+   
     for row in rows:
-        x.add_row(row)
-    print(x)
-
+        r = []
+        for col in row:
+            r.append(col)
+        print(r)
+        table.append(r)
+    print(tabulate(table, headers=colnames, tablefmt="fancy_grid"))
 
 def setOrderStatus(o, s):
     SQL = "UPDATE orders set status = %s where ordernumber = %s"
