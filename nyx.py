@@ -28,7 +28,7 @@ class checkInput:
                 r = o
                 return r
         except ValueError:
-            print('Provide a valid ORDERNUMBER like "-o 12344256"')
+            print(o, ' is not a valid ORDERNUMBER, provide a valid ORDERNUMBER like "-o 12344256"')
             exit()
 
     def server(l):
@@ -41,7 +41,7 @@ class checkInput:
     def path(p):
         if p == '':
             question = 'Should the data be stored at the default path {p}'.format(p=cfg_path)
-            answer = utilities.queriies.query_yes_no(question, default='yes')
+            answer = utilities.queries.query_yes_no(question, default='yes')
             if answer == 'yes':
                 return cfg_path
             else:
@@ -53,8 +53,8 @@ class checkInput:
 
     def datadir(dir):
         if dir == '':
-            print('ERROR: Provide a directory like "-d /home/mydata" \
-                (this should point to the directory with all your order folders')
+            print('ERROR:\tProvide a Data directory like "-d /home/mydata"')
+            print('\t(this should point to the directory with all your order folders)')
             exit()
         elif not os.path.exists(dir):
             print('ERROR: Data directory {d} does not exist'.format(d=dir))
@@ -64,8 +64,8 @@ class checkInput:
 
     def workingdir(dir):
         if dir == '':
-            print('ERROR: Provide a temporary working directory like "-w /tmp" \
-                (this should point to the directory outside of datadir')
+            print('ERROR:\tProvide a temporary working directory like "-w /tmp"')
+            print('\t(this should point to the directory outside of datadir)')
             exit()
         elif not os.path.exists(dir):
             print('ERROR: Working directory {d} does not exist'.format(d=dir))
@@ -106,6 +106,7 @@ def create_arg_parser():
     )
     parser.add_argument(
         '-o', '--orderNumber',
+        nargs='+',
         default="",
         help='The Order Number from NOAA CLASS'
     )
@@ -116,6 +117,7 @@ def create_arg_parser():
     )
     parser.add_argument(
         '-l', '--server',
+        nargs='+',
         default="",
         choices=[
             'ncdc',
@@ -167,13 +169,26 @@ def main(argv):
             print('Something went wrong')
     elif mode == 'addOrder':
         print('Add a new order')
-        orderNumber = checkInput.orderNumber(parsed_args.orderNumber)
-        server = checkInput.server(parsed_args.server)
+        orderserver = zip(parsed_args.orderNumber, parsed_args.server)
         directory = checkInput.path(parsed_args.path)
-        if downloadmanager.order.add(orderNumber, server, directory) is None:
-            print('Order added')
-        else:
-            print('There was an error, the order has not been added')
+        for i in orderserver:
+            orderNumber = checkInput.orderNumber(i[0])
+            server = checkInput.server(i[1])
+            question = 'Order {o} from Server {s} will be added at {p}'.format(
+                o=orderNumber,
+                s=server,
+                p=directory
+            )
+            answer = utilities.queries.query_yes_no(question)
+            if answer == 'yes':
+                try:
+                    downloadmanager.order.add(orderNumber, server, directory)
+                except:
+                    print('There was an error, the order has not been added')
+            else:
+                print('Order will not be added.')
+        exit()
+
     elif mode == 'getManifest':
         print('Get the manifest for NEW orders')
         SQL = "SELECT * FROM getmanifest"

@@ -19,7 +19,7 @@ cfg_limit = int(config['Server']['limit'])
 
 
 class image:
-    def download(self):
+    def download():
         SQL = "SELECT * FROM downloadimages"  # all that are not finished
         data = ('', )
         rows = sql.select(SQL, data)
@@ -58,7 +58,7 @@ class image:
             if (
                     # check in the database if the checksum was given, if not, it is non-verified download
                     (not checksum == '') and
-                    (self.checksumcheck(dest, checksum.replace('-', ''))) and
+                    (image.checksumcheck(dest, checksum.replace('-', ''))) and
                     (utilities.getFileSize(dest) == filesize)
             ):
                 print('INFO: Download size and md5 verified')
@@ -70,7 +70,7 @@ class image:
             if sql.ordercomplete(orderNumber) is True:
                 sql.setOrderStatus(orderNumber, 'FINISHED')
 
-    def checksumcheck(self, d, c):
+    def checksumcheck(d, c):
         filechecksum = utilities.md5sum(d)
         xmlchecksum = c
         if filechecksum == xmlchecksum:
@@ -80,14 +80,14 @@ class image:
 
 
 class order:
-    def add(self, orderNumber, server, directory):
+    def add(orderNumber, server, directory):
         # Note: no quotes
         SQL = "INSERT INTO orders (ordernumber, status, server,directory) VALUES (%s,%s,%s,%s);"
         data = (orderNumber, "NEW", server, directory)
         r = sql.insert(SQL, data)
         return r
 
-    def remove(self, o):
+    def remove(o):
         SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
         data = (o,)
         rows = sql.select(SQL, data)
@@ -118,8 +118,8 @@ class order:
 
 
 class manifest():
-    def download(self, u, p, o):
-        manifestname = self.getName(u)
+    def download(u, p, o):
+        manifestname = manifest.getName(u)
         if manifestname == '':
             print('ERROR: There seems to be no Manifest file for order {number}'.format(number=o))
             sql.setOrderStatus(o, 'NOMANIFEST')
@@ -135,7 +135,7 @@ class manifest():
             else:
                 print('ERROR: There is no Manifest for order {o}'.format(o=o))
 
-    def getName(self, u):  # url, location, ordernumber, path
+    def getName(u):  # url, location, ordernumber, path
         result = ftp.dirlist(u)
         # lets print the string on screen
         # print(result.decode('iso-8859-1'))
@@ -159,7 +159,7 @@ class manifest():
                 manifestname = parts[8]
         return manifestname
 
-    def process(self):
+    def process():
         SQL = ("SELECT * FROM processmanifest")
         data = ('',)
         rows = sql.select(SQL, data)
@@ -169,13 +169,13 @@ class manifest():
             path = row[1]
             manifest = row[2]
             if os.path.exists(os.path.join(path, str(orderNumber), manifest)):
-                if self.loadxml(os.path.join(path, str(orderNumber), manifest), orderNumber) == 1:
+                if manifest.loadxml(os.path.join(path, str(orderNumber), manifest), orderNumber) == 1:
                     sql.setOrderStatus(str(orderNumber), 'READY')
                 else:
                     sql.setOrderStatus(str(orderNumber), 'ERROR')
         exit()
 
-    def loadxml(self, xmlfile, orderNumber):
+    def loadxml(xmlfile, orderNumber):
         print('INFO: Loading XML Manifest file', str(xmlfile), 'into table images')
         tree = ET.parse(xmlfile)
         root = tree.getroot()
@@ -192,7 +192,6 @@ class manifest():
                 expiration_date = datetime.strptime(expiration_date, "%Y-%m-%dT%H:%M:%SZ")
             except:
                 print('ERROR: Cannot read all values in Manifest', str(xmlfile))
-
             try:
                 checksum = lineitem.find('item/checksum').text
             except:
