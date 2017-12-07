@@ -117,6 +117,7 @@ def create_arg_parser():
     )
     parser.add_argument(
         '-l', '--server',
+        nargs='+',
         default="",
         choices=[
             'ncdc',
@@ -168,18 +169,26 @@ def main(argv):
             print('Something went wrong')
     elif mode == 'addOrder':
         print('Add a new order')
-        for i in parsed_args.orderNumber:
-            orderNumber = checkInput.orderNumber(i)
-            server = checkInput.server(parsed_args.server)
-            directory = checkInput.path(parsed_args.path)
-            if downloadmanager.order.add(orderNumber, server, directory) is None:
-                print('Order {o} from Server {s} will be added at {p}'.format(
-                    o=orderNumber,
-                    s=server,
-                    p=directory
-                ))
+        orderserver = zip(parsed_args.orderNumber, parsed_args.server)
+        directory = checkInput.path(parsed_args.path)
+        for i in orderserver:
+            orderNumber = checkInput.orderNumber(i[0])
+            server = checkInput.server(i[1])
+            question = 'Order {o} from Server {s} will be added at {p}'.format(
+                o=orderNumber,
+                s=server,
+                p=directory
+            )
+            answer = utilities.queries.query_yes_no(question)
+            if answer == 'yes':
+                try:
+                    downloadmanager.order.add(orderNumber, server, directory)
+                except:
+                    print('There was an error, the order has not been added')
             else:
-                print('There was an error, the order has not been added')
+                print('Order will not be added.')
+        exit()
+
     elif mode == 'getManifest':
         print('Get the manifest for NEW orders')
         SQL = "SELECT * FROM getmanifest"
