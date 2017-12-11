@@ -94,21 +94,31 @@ def printSQL(s, d):
         table.append(r)
     print(tabulate(table, headers=colnames, tablefmt="fancy_grid"))
 
+
 def setOrderStatus(o, s):
     SQL = "UPDATE orders set status = %s where ordernumber = %s"
     data = (s, o)
     update(SQL, data)
 
 
-def setImageStatus(self, o, f, s):
+def setImageStatus(o, f, s):
     SQL = "UPDATE images set status = %s where ordernumber = %s AND file_name = %s"
     data = (s, o, f)
     update(SQL, data)
 
 
-def ordercomplete(o):
+def orderCompleted(o):
     conn, cur = connect()
-    cur.callproc("ordercomplete", [o, ])
+    cur.callproc("mj_orderfinished", [o, ])
+    r = bool(cur.fetchall()[0][0])
+    conn.commit()
+    disconnect(conn, cur)
+    return r
+
+
+def orderChecked(o):
+    conn, cur = connect()
+    cur.callproc("mj_orderchecked", [o, ])
     r = bool(cur.fetchall()[0][0])
     conn.commit()
     disconnect(conn, cur)

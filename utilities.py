@@ -3,6 +3,7 @@ import sys
 from hashlib import md5
 import math
 import configparser
+import shutil
 
 
 config = configparser.ConfigParser()
@@ -50,14 +51,68 @@ class filesandfolders:
             b = os.path.getsize(d)
             return b
         except:
-            print('file {file} does not exist or is inaccessible'.format(file=d))
+            return 0
 
-    def md5sum(filename):  # https://bitbucket.org/prologic/tools/src/tip/md5sum?fileviewer=file-view-default
+    # def getFileNamesFromFolder(d):
+    #     fn = []
+    #     for dirpath, dirnames, filenames in os.walk(d):
+    #         for f in filenames:
+    #             fn = fn + [f]
+    #     return fn
+
+    def md5sum(filename):  
+        """ https://bitbucket.org/prologic/tools/src/tip/md5sum?fileviewer=file-view-default """
         hash = md5()
         with open(filename, "rb") as f:
             for chunk in iter(lambda: f.read(128 * hash.block_size), b""):
                 hash.update(chunk)
         return hash.hexdigest()
+
+    def listdirs(folder):
+        """ https://stackoverflow.com/a/142368/1623867 """
+        return [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
+
+    def copyDirAndFiles(root_src_dir, root_dst_dir):
+        """ https://stackoverflow.com/a/7420617/1623867 """
+        for src_dir, dirs, files in os.walk(root_src_dir):
+            dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+            if not os.path.exists(dst_dir):
+                os.makedirs(dst_dir)
+            counter = 0
+            for file_ in files:
+                counter += 1
+                src_file = os.path.join(src_dir, file_)
+                dst_file = os.path.join(dst_dir, file_)
+                if os.path.exists(dst_file):
+                    os.remove(dst_file)
+                print('INFO: Copy file {c: >3}/{ttl} {s} to {d}'.format(
+                    c=counter,
+                    ttl=len(files),
+                    s=file_,
+                    d=dst_dir
+                ))
+                shutil.copy(src_file, dst_dir)
+
+    def moveDirAndFiles(root_src_dir, root_dst_dir):
+        """ https://stackoverflow.com/a/7420617/1623867 """
+        for src_dir, dirs, files in os.walk(root_src_dir):
+            dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+            if not os.path.exists(dst_dir):
+                os.makedirs(dst_dir)
+            counter = 0
+            for file_ in files:
+                counter += 1
+                src_file = os.path.join(src_dir, file_)
+                dst_file = os.path.join(dst_dir, file_)
+                if os.path.exists(dst_file):
+                    os.remove(dst_file)
+                print('INFO: Move file {c: >3}/{ttl} {s} to {d}'.format(
+                    c=counter,
+                    ttl=len(files),
+                    s=file_,
+                    d=dst_dir
+                ))
+                shutil.move(src_file, dst_dir)
 
 
 class queries:

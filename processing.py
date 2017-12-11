@@ -44,12 +44,12 @@ class footprint:
             print('error with item')
 
     def processor(row, datadir, tempdir):
-        print('INFO: Process ID: {ID} {row} {dd} {td}'.format(
-            ID=os.getpid(),
-            row=row,
-            dd=datadir,
-            td=tempdir
-        ))
+        # print('INFO: Process ID: {ID} {row} {dd} {td}'.format(
+        #     ID=os.getpid(),
+        #     row=row,
+        #     dd=datadir,
+        #     td=tempdir
+        # ))
         orderNumber = str(row[0])
         filename = str(row[1])
         noaaid = str(row[2])
