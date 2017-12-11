@@ -107,7 +107,7 @@ def setImageStatus(o, f, s):
     update(SQL, data)
 
 
-def orderCompleted(o):
+def orderFinished(o):
     conn, cur = connect()
     cur.callproc("mj_orderfinished", [o, ])
     r = bool(cur.fetchall()[0][0])
