@@ -89,6 +89,7 @@ def create_arg_parser():
             'processManifest',
             'downloadImages',
             'deleteOrder',
+            'integrityCheck',
             'generateFootprint'
         ],
         help='What do you want to do?'
@@ -218,11 +219,14 @@ def main(argv):
             orderNumber = checkInput.orderNumber(i)
             downloadmanager.order.remove(orderNumber)
     elif mode == 'generateFootprint':
-        print('Do some processing')
         datadir = checkInput.datadir(parsed_args.datadir)
         workingdir = checkInput.workingdir(parsed_args.workingdir)
         proc.footprint.info()
         proc.footprint.generate(datadir, workingdir)
+    elif mode == 'integrityCheck':
+        datadir = checkInput.datadir(parsed_args.datadir)
+        downloadmanager.order.integrityCheck(datadir)
+
 
     exit()
 

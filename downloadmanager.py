@@ -10,6 +10,7 @@ import sql
 import utilities
 import configparser
 import os
+from tabulate import tabulate
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -20,7 +21,7 @@ cfg_limit = int(config['Server']['limit'])
 
 class image:
     def download():
-        SQL = "SELECT * FROM downloadimages"  # all that are not finished
+        SQL = "SELECT * FROM downloadimages"  # all that are READY
         data = ('', )
         rows = sql.select(SQL, data)
         print('INFO: {d} images to download'.format(d=len(rows)))
@@ -87,9 +88,82 @@ class order:
         r = sql.insert(SQL, data)
         return r
 
-    def remove(o):
-        SQL = "SELECT * FROM deleteorder WHERE ordernumber = %s"
-        data = (o,)
+    def integrityCheck(baseDir):
+        """Checks the integrity of the local files against the Database"""
+        print('Check Folder, Files and DB integrity')
+        SQL = "SELECT ordernumber FROM orders WHERE status <> 'CHECKED'"
+        data = ('',)
+        orderRows = sql.select(SQL, data)
+        if orderRows == []:
+            print('INFO: Nothing to check, all good')
+            exit()
+
+        print('INFO: The following {x} orders have to be checked'.format(
+            x=len(orderRows)))
+        print(tabulate(orderRows))
+        for row in orderRows:
+            orderNumber = str(row[0])
+            orderPath = os.path.join(baseDir, orderNumber)
+            if not os.path.exists(orderPath):
+                print('WARNING: {f} does not even exist, continiue'.format(
+                    f=orderPath
+                ))
+                continue
+            else:
+                print('INFO: Now checking order {o}'.format(
+                    o=orderNumber
+                ))
+            SQL = "SELECT file_name, checksum, file_size FROM images WHERE orderNumber = %s"
+            data = (str(orderNumber),)
+            frows = sql.select(SQL, data)
+            print('INFO: Checking {x} files for order {o}'.format(
+                x=len(frows),
+                o=orderNumber
+            ))
+            counter = 0
+            for f in frows:
+                counter += 1
+                dbFileName = f[0]
+                dbFileChkS = f[1].replace('-', '')
+                dbFileSize = f[2]
+                fileToCheck = os.path.join(baseDir, orderNumber, dbFileName)
+                if os.path.isfile(fileToCheck):
+                    c = utilities.filesandfolders.md5sum(fileToCheck)
+                    s = utilities.filesandfolders.getFileSize(fileToCheck)
+                    if c == dbFileChkS and s == dbFileSize:
+                        print('INFO: {x: >3}/{y} {f} is CHECKED'.format(
+                            f=fileToCheck,
+                            x=counter,
+                            y=len(frows)
+                        ))
+                        sql.setImageStatus(
+                            orderNumber,
+                            dbFileName,
+                            'CHECKED'
+                        )
+                    else:
+                        print('ERROR: {x: >3}/{y} {f} seems BROKEN'.format(
+                            f=fileToCheck,
+                            x=counter,
+                            y=len(frows)
+                        ))
+                        sql.setImageStatus(
+                            orderNumber,
+                            dbFileName,
+                            'BROKEN'
+                        )
+                else:
+                    print('WARNING: File {f} does not exist locally'.format(
+                        f=fileToCheck
+                    ))
+            sql.orderChecked(orderNumber)
+        print('All done')
+        exit()
+
+    def remove():
+        """REMOVES all order folders without question"""
+        SQL = "SELECT * FROM deleteorder WHERE status = 'CHECKED'"
+        data = ('',)
         rows = sql.select(SQL, data)
         for row in rows:
             orderNumber = row[0]
@@ -97,20 +171,15 @@ class order:
             status = row[2]
             directory = row[3]
             folder = os.path.join(directory, str(orderNumber))
-            print('Order {order} [{notice}] has the status {status}'.format(
-                order=orderNumber,
-                notice=notice,
-                status=status)
-            )
-            question = 'Are you sure you want to delete this order at {d}?'.format(d=folder)
-            decision = utilities.queries.query_yes_no(question, default="yes")
-            if decision == 'yes':
+
+            if os.path.isdir(folder):
+                print('Order {order} [{notice}] with status {status} deleted'.format(
+                    order=orderNumber,
+                    notice=notice,
+                    status=status)
+                )
                 utilities.filesandfolders.deletefiles(folder)
                 utilities.filesandfolders.deletefolder(folder)
-                if not os.path.exists(folder):
-                    sql.setOrderStatus(orderNumber, 'DELETED')
-            elif decision == 'no':
-                print('Nothing will be delete.')
             else:
                 print('ERROR: {d} not a local folder.'.format(d=folder))
                 print('INFO: Are you on the right computer?')

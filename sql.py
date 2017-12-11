@@ -114,3 +114,12 @@ def ordercomplete(o):
     conn.commit()
     disconnect(conn, cur)
     return r
+
+
+def orderChecked(o):
+    conn, cur = connect()
+    cur.callproc("mj_orderchecked", [o, ])
+    r = bool(cur.fetchall()[0][0])
+    conn.commit()
+    disconnect(conn, cur)
+    return r
