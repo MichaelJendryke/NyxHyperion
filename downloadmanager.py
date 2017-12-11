@@ -68,8 +68,7 @@ class image:
                 print('ERROR: Download of {d} has errors'.format(d=dest))
                 sql.setImageStatus(orderNumber, filename, 'ERROR')
 
-            if sql.ordercomplete(orderNumber) is True:
-                sql.setOrderStatus(orderNumber, 'FINISHED')
+            sql.orderFinished(orderNumber)
 
     def checksumcheck(d, c):
         filechecksum = utilities.filesandfolders.md5sum(d)
@@ -171,18 +170,14 @@ class order:
             status = row[2]
             directory = row[3]
             folder = os.path.join(directory, str(orderNumber))
-
             if os.path.isdir(folder):
-                print('Order {order} [{notice}] with status {status} deleted'.format(
-                    order=orderNumber,
-                    notice=notice,
+                print('Order {o} [{n}] with status {status} deleted'.format(
+                    o=orderNumber,
+                    n=notice,
                     status=status)
                 )
                 utilities.filesandfolders.deletefiles(folder)
                 utilities.filesandfolders.deletefolder(folder)
-            else:
-                print('ERROR: {d} not a local folder.'.format(d=folder))
-                print('INFO: Are you on the right computer?')
         exit()
 
 
