@@ -14,3 +14,17 @@ __Linux__ activate the environment with
 ```bash
 source activate ntl
 ```
+
+# Order Status
+* NEW
+* MANIFEST
+* READY
+* FINISHED
+* CHECKED
+
+# Image Status
+* NEW
+* ERROR
+* FINISHED
+* BROKEN
+* CHECKED

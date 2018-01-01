@@ -2,7 +2,7 @@ import subprocess
 import os
 import uuid
 try:
-    from osgeo import ogr
+    from osgeo import ogr, gdal, osr
 except Exception as e:
     print(e)
 import sql
@@ -59,8 +59,9 @@ class footprint:
             os.mkdir(os.path.expanduser(workingdir))
 
         file = os.path.join(datadir, orderNumber, filename)
-        if not os.path.isfile(file):
-            print('WARNING: File {f} is not there'.format(f=file))
+
+        if not os.path.isfile(file) or not footprint.hdfLayerExists(file):
+            print('WARNING: File {f} is not there or Radiance band is missing'.format(f=file))
         else:
             print(workingdir, orderNumber, file, filename, noaaid)
 
@@ -86,13 +87,14 @@ class footprint:
         print(gdaltranslate)
         subprocess.check_call(gdaltranslate)
 
-        # gdalwarp -dstnodata 0 -dstalpha -of GTiff test.tif test2.tif
+        # gdalwarp -dstnodata 0 -dstalpha -to SRC_METHOD=NO_GEOTRANSFORM -of GTiff test.tif test2.tif
         infile = os.path.join(workingdir, r1)
         r2 = '{u}{end}'.format(u=str(uuid.uuid4()), end='.tif')
         outfile = os.path.join(workingdir, r2)
-        gdalwarp = '{tool} {param} {of} {infile} {outfile}'.format(
+        gdalwarp = '{tool} {param1} {param2} {of} {infile} {outfile}'.format(
             tool='gdalwarp',
-            param='-ot Int16 -wt Int16 -dstnodata 0 -dstalpha',
+            param1='-ot Int16 -wt Int16 -dstnodata 0 -dstalpha',
+            param2='-to SRC_METHOD=NO_GEOTRANSFORM',
             of='-of GTiff',
             infile=infile,
             outfile=outfile
@@ -141,27 +143,37 @@ class footprint:
             epsg = layer.GetSpatialRef().GetAuthorityCode("GEOGCS")
         except:
             print('Cannot find EPSG code')
-
-        for i in range(layer.GetFeatureCount()):
-            feature = layer.GetFeature(i)
-            # print(feature.ExportToJson())
-            geom = feature.geometry()
-            SQL = "INSERT INTO {table}(file_name, noaaid, orderNumber, footprint) SELECT '{fn}', {ni}, {on}, ST_GeomFromText('{geom}',{epsg})".format(
-                table='imagedata',
-                fn=filename,
-                ni=noaaid,
-                on=orderNumber,
-                geom=str(geom),
-                epsg=str(epsg)
-            )
-            data = ('',)
-            try:
-                sql.insert(SQL,data)
-            except Exception as e:
-                raise
-            else:
-                pass
-            finally:
-                pass
+            epsg = 0
+            
+        if not epsg == 0:
+            for i in range(layer.GetFeatureCount()):
+                feature = layer.GetFeature(i)
+                # print(feature.ExportToJson())
+                geom = feature.geometry()
+                SQL = "INSERT INTO {table}(file_name, noaaid, orderNumber, footprint) SELECT '{fn}', {ni}, {on}, ST_GeomFromText('{geom}',{epsg})".format(
+                    table='imagedata',
+                    fn=filename,
+                    ni=noaaid,
+                    on=orderNumber,
+                    geom=str(geom),
+                    epsg=str(epsg)
+                )
+                data = ('',)
+                try:
+                    sql.insert(SQL,data)
+                except Exception as e:
+                    raise
+                else:
+                    pass
+                finally:
+                    pass
 
             # INSERT INTO imagedata(footprint) SELECT ST_GeomFromText('POLYGON ((47.8986402364685 -19.9761359737374,77.2019166143206 -24.5331415521829,75.348830485111 -44.4051468911004,38.8567335982238 -38.6872585624496,47.8986402364685 -19.9761359737374))',4326)
+
+    def hdfLayerExists(file):
+        dataset = gdal.Open(file, gdal.GA_ReadOnly)
+        subdataset = dataset.GetSubDatasets()
+        for s in subdataset:
+            if s[0].find('Radiance') > -1:
+                return True
+        return False

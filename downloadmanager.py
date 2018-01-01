@@ -10,7 +10,10 @@ import sql
 import utilities
 import configparser
 import os
+import errno
 from tabulate import tabulate
+from shutil import copyfile, copy
+import glob
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -87,9 +90,16 @@ class order:
         r = sql.insert(SQL, data)
         return r
 
-    def integrityCheck(baseDir):
-        """Checks the integrity of the local files against the Database"""
-        print('Check Folder, Files and DB integrity')
+    def integrityCheck(downloadDir, baseDir):
+        """
+        Checks the integrity of the local files against the Database
+        IF the file does not exist it will be copied from the Nextcloud
+        download directory.
+        """
+        print('Check Folder, Files and DB integrity from {s} to {d}'.format(
+            s=downloadDir,
+            d=baseDir
+        ))
         SQL = "SELECT ordernumber FROM orders WHERE status <> 'CHECKED'"
         data = ('',)
         orderRows = sql.select(SQL, data)
@@ -104,15 +114,27 @@ class order:
             orderNumber = str(row[0])
             orderPath = os.path.join(baseDir, orderNumber)
             if not os.path.exists(orderPath):
-                print('WARNING: {f} does not even exist, continiue'.format(
+                try:
+                    os.makedirs(orderPath)
+                except OSError as e:
+                    if e.errno != errno.EEXIST:
+                        raise
+                print('INFO: Directory {f} created'.format(
                     f=orderPath
                 ))
-                continue
-            else:
-                print('INFO: Now checking order {o}'.format(
-                    o=orderNumber
-                ))
-            SQL = "SELECT file_name, checksum, file_size FROM images WHERE orderNumber = %s"
+                xmlSrcFile = os.path.join(downloadDir, orderNumber, '*.xml')
+                xmlDstDir = os.path.join(baseDir, orderNumber)
+                for file in glob.glob(xmlSrcFile):
+                    print('INFO: Copy XML manifest file {s}'.format(
+                        s=file
+                    ))
+                    copy(file, xmlDstDir)
+
+            print('INFO: Now checking order {o}'.format(
+                o=orderNumber
+            ))
+
+            SQL = "SELECT file_name, checksum, file_size FROM images WHERE orderNumber = %s and status <> 'CHECKED'"
             data = (str(orderNumber),)
             frows = sql.select(SQL, data)
             print('INFO: Checking {x} files for order {o}'.format(
@@ -126,6 +148,33 @@ class order:
                 dbFileChkS = f[1].replace('-', '')
                 dbFileSize = f[2]
                 fileToCheck = os.path.join(baseDir, orderNumber, dbFileName)
+
+                fileToCopy = os.path.join(downloadDir, orderNumber, dbFileName)
+                fileToCopySize = utilities.filesandfolders.getFileSize(fileToCopy)
+                if (
+                    os.path.isfile(fileToCopy) and
+                    utilities.filesandfolders.md5sum(fileToCopy) == dbFileChkS and
+                    fileToCopySize == dbFileSize
+                ):
+                    if (
+                        not os.path.isfile(fileToCheck) or
+                        not utilities.filesandfolders.getFileSize(fileToCheck) == dbFileSize
+                    ):
+                        print('INFO: Copyfile {s} to {d}'.format(
+                            s=fileToCopy,
+                            d=fileToCheck
+                        ))
+                        copyfile(fileToCopy, fileToCheck)
+                else:
+                    print('WARNING: {x: >3}/{y} {f} not yet downloaded. Size differnt {sd}/{sm}'.format(
+                        f=fileToCopy,
+                        x=counter,
+                        y=len(frows),
+                        sd=fileToCopySize,
+                        sm=dbFileSize
+                    ))
+                    continue
+
                 if os.path.isfile(fileToCheck):
                     c = utilities.filesandfolders.md5sum(fileToCheck)
                     s = utilities.filesandfolders.getFileSize(fileToCheck)
