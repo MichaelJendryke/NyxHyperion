@@ -14,7 +14,6 @@ __Linux__ activate the environment with
 ```bash
 source activate ntl
 ```
-
 # Order Status
 * NEW
 * MANIFEST
@@ -28,3 +27,9 @@ source activate ntl
 * FINISHED
 * BROKEN
 * CHECKED
+=======
+# GUIDS
+Add orders which are from NOAA to DATABASE_VIIRS 
+```bash
+python D:\NyxHyperion\nyx.py -m addOrder -o 123456 -l ngdc -p /var/www/vhosts/geoinsight.xyz/noaa.geoinsight.xyz/NOAA
+```
