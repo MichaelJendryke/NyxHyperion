@@ -2,3 +2,9 @@
 *.cfg
 
 website/config\.php
+
+\.sublime-project
+
+\.sublime-project\.sublime-workspace
+
+test\.sublime-workspace

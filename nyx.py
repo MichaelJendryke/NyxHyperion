@@ -134,12 +134,12 @@ def create_arg_parser():
     parser.add_argument(
         '-d', '--datadir',
         default="",
-        help='Path to your data directory (this is used for generateFootprint)'
+        help='Path to your data directory for e.g.generateFootprint or integrityCheck)'
     )
     parser.add_argument(
         '-w', '--workingdir',
         default="",
-        help='Path to your working directory (this is used for generateFootprint)'
+        help='Path to your working directory for e.g. generateFootprint or integrityCheck'
     )
     return parser
 
@@ -222,8 +222,9 @@ def main(argv):
         proc.footprint.info()
         proc.footprint.generate(datadir, workingdir)
     elif mode == 'integrityCheck':
-        datadir = checkInput.datadir(parsed_args.datadir)
-        downloadmanager.order.integrityCheck(datadir)
+        downloaddir = checkInput.workingdir(parsed_args.workingdir)
+        basedir = checkInput.datadir(parsed_args.datadir)
+        downloadmanager.order.integrityCheck(downloaddir, basedir)
 
 
     exit()
