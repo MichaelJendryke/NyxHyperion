@@ -14,6 +14,7 @@ import errno
 from tabulate import tabulate
 from shutil import copyfile, copy
 import glob
+import time
 
 config = configparser.ConfigParser()
 config_file = os.path.join(os.path.dirname(__file__), 'settings.cfg')
@@ -89,6 +90,15 @@ class order:
         data = (orderNumber, "NEW", server, directory)
         r = sql.insert(SQL, data)
         return r
+
+    def integrityCheckForever(dDir, bDir):
+        try:
+            while True:
+                order.integrityCheck(dDir, bDir)
+                print(time.ctime().split()[3], ' Waiting for 10 Minutes')
+                time.sleep(600)
+        except KeyboardInterrupt:
+            pass
 
     def integrityCheck(downloadDir, baseDir):
         """
@@ -206,7 +216,6 @@ class order:
                     ))
             sql.orderChecked(orderNumber)
         print('All done')
-        exit()
 
     def remove():
         """REMOVES all order folders without question"""
@@ -313,7 +322,7 @@ class manifest():
 
             print('INFO: Loading data to database table images:\
                 ', noaaid, file_name, file_size, creation_date, expiration_date, checksum)
-            SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size,noaaid) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s,%s);" # Note: no quotes
+            SQL = "INSERT INTO images (manifest,file_name,checksum,ordernumber,ordercreated,orderexpiration,status,file_size,noaaid) VALUES (%s,%s,%s,%s,TIMESTAMP %s,TIMESTAMP %s,%s,%s,%s);"  # Note: no quotes
             data = (os.path.basename(xmlfile), file_name, checksum, orderNumber, creation_date, expiration_date, 'NEW', file_size, noaaid)
             try:
                 sql.insert(SQL, data)

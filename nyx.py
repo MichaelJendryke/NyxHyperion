@@ -141,6 +141,16 @@ def create_arg_parser():
         default="",
         help='Path to your working directory for e.g. generateFootprint or integrityCheck'
     )
+    parser.add_argument(
+        '-f', '--forever',
+        default='yes',
+        choices=[
+            'yes',
+            'no'
+        ],
+        help='Should the integrityCheck run forever?'
+    )
+
     return parser
 
 
@@ -224,9 +234,10 @@ def main(argv):
     elif mode == 'integrityCheck':
         downloaddir = checkInput.workingdir(parsed_args.workingdir)
         basedir = checkInput.datadir(parsed_args.datadir)
-        downloadmanager.order.integrityCheck(downloaddir, basedir)
-
-
+        if parsed_args.forever == 'no':
+            downloadmanager.order.integrityCheck(downloaddir, basedir)
+        else:
+            downloadmanager.order.integrityCheckForever(downloaddir, basedir)
     exit()
 
 
